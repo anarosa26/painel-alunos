@@ -524,20 +524,15 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
   const rows = parseCSV(text);
   if (rows.length < 2) return null;
 
-  const header = rows[0];
-  const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
-  const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
-  const oIdx = 3, lIdx = 4, vIdx = 5;
-  const expIdx = header.findIndex(h => normalize(h).includes('expira'));
+  // Estrutura real: Pontuação(0) | Nome(1) | Email(2) | Ouvinte(3) | Lead(4) | Vendedor(5) | Dt Expiração(6)
+  const nomeIdx = 1, emailIdx = 2, oIdx = 3, lIdx = 4, vIdx = 5, expIdx = 6;
 
-  const q = normalize(query).replace(/\s+/g, '');
+  const q = normalize(query);
   for (const row of rows.slice(1)) {
     const nome = row[nomeIdx] || '';
     const email = row[emailIdx] || '';
-    // Compara email sem espaços e sem case, e nome normalizado
-    const emailNorm = normalize(email).replace(/\s+/g, '');
-    const nomeNorm = normalize(nome);
-    if (emailNorm === q || emailNorm.includes(q) || nomeNorm.includes(normalize(query))) {
+    if (!nome && !email) continue;
+    if (normalize(email) === q || normalize(email).includes(q) || normalize(nome).includes(q)) {
       return {
         ouvinte: parseInt(row[oIdx]) || 0,
         lead: parseInt(row[lIdx]) || 0,
@@ -844,4 +839,14 @@ async function buscar() {
   }
 
   // Múltiplos — mostra lista
-  _alunosEncontr
+  _alunosEncontrados = alunos;
+  mostrarLista(alunos);
+}
+
+// Enter para buscar
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buscar();
+});
+</script>
+</body>
+</html>
