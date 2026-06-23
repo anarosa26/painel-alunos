@@ -490,10 +490,9 @@ function parseCSV(text) {
 }
 
 async function buscarNaPlanilhaAlunos(query, sheetId) {
-  // Aba principal: gid 494969041
   const text = await fetchSheetCSV(sheetId, '494969041');
   const rows = parseCSV(text);
-  if (rows.length < 2) return null;
+  if (rows.length < 2) return [];
 
   const header = rows[0];
   const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
@@ -503,24 +502,24 @@ async function buscarNaPlanilhaAlunos(query, sheetId) {
   const expIdx = header.findIndex(h => normalize(h).includes('expira'));
 
   const q = normalize(query);
+  const resultados = [];
   for (const row of rows.slice(1)) {
     const nome = row[nomeIdx] || '';
     const email = row[emailIdx] || '';
+    if (!nome && !email) continue;
     if (normalize(nome).includes(q) || normalize(email).includes(q)) {
-      return {
-        nome: nome,
-        email: email,
+      resultados.push({
+        nome, email,
         telefone: row[telIdx] || '',
         dataInicio: row[dataIdx] || '',
         expiracao: row[expIdx] || '',
-      };
+      });
     }
   }
-  return null;
+  return resultados;
 }
 
 async function buscarNaPlanilhaSparrings(query, sheetId) {
-  // Aba principal: gid 345849370
   const text = await fetchSheetCSV(sheetId, '345849370');
   const rows = parseCSV(text);
   if (rows.length < 2) return null;
@@ -528,7 +527,6 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
   const header = rows[0];
   const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
   const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
-  // Colunas D, E, F = índices 3, 4, 5 (0-based)
   const oIdx = 3, lIdx = 4, vIdx = 5;
   const expIdx = header.findIndex(h => normalize(h).includes('expira'));
 
@@ -653,7 +651,7 @@ function comparaExpiracao(dataSheet, dataMk) {
   }
 }
 
-function render(aluno, sparring, mk) {
+function render(aluno, sparring, mk, subdomain) {
   const nome = aluno?.nome || mk?.user?.name || mk?.user?.full_name || 'Aluno não encontrado';
   const email = aluno?.email || mk?.user?.email || '';
   const tel = aluno?.telefone || '';
@@ -675,6 +673,15 @@ function render(aluno, sparring, mk) {
     ? `<img src="${foto}" alt="${nome}" onerror="this.style.display='none';this.parentElement.textContent='${iniciais(nome)}'">`
     : iniciais(nome);
 
+  // Link direto Memberkit
+  const mkEmail = encodeURIComponent(email);
+  const mkLink = email ? `https://${subdomain}.memberkit.com.br/admin/users?q=${mkEmail}` : `https://${subdomain}.memberkit.com.br/admin/users`;
+
+  // Expiração com cor
+  const expLabel = expSheet
+    ? (() => { const ei = expiracaoLabel(expSheet); return `<span style="color:var(--${ei.cls === 'ok' ? 'green' : ei.cls === 'warn' ? 'amber' : ei.cls === 'error' ? 'red' : 'muted'})">${expSheet}</span>`; })()
+    : '<span style="color:var(--muted)">—</span>';
+
   const turmasHtml = turmas.length
     ? turmas.map(t => {
         const ativo = t.status === 'active' || !t.status;
@@ -683,7 +690,7 @@ function render(aluno, sparring, mk) {
           <span class="course-status ${ativo ? 'status-active' : 'status-inactive'}">${ativo ? 'Ativo' : 'Inativo'}</span>
         </div>`;
       }).join('')
-    : '<p style="color:var(--muted);font-size:13px;">Nenhuma turma encontrada na Memberkit.</p>';
+    : '';
 
   document.getElementById('result').innerHTML = `
     <div class="profile-header">
@@ -691,7 +698,7 @@ function render(aluno, sparring, mk) {
       <div class="profile-info">
         <h2>${nome}</h2>
         <p>${email}${tel ? ' · ' + tel : ''}</p>
-        <span class="badge">Acesso até: ${expSheet || expMk || 'não informado'}</span>
+        <span class="badge">Acesso até: ${expSheet || '—'}</span>
       </div>
     </div>
     <div class="body-card">
@@ -702,17 +709,11 @@ function render(aluno, sparring, mk) {
           <div class="info-item"><label>E-mail</label><span>${email || '—'}</span></div>
           <div class="info-item"><label>Telefone</label><span>${tel || '—'}</span></div>
           <div class="info-item"><label>Data de início</label><span>${dataInicio || '—'}</span></div>
-          <div class="info-item"><label>Expiração (planilha)</label><span>${expSheet || '—'}</span></div>
-          <div class="info-item"><label>Expiração (Memberkit)</label><span>${expMk || '—'}</span></div>
+          <div class="info-item"><label>Expiração do acesso</label>${expLabel}</div>
         </div>
       </div>
 
       ${divComp ? `<div class="section"><div class="section-title">Verificação de Datas</div>${divComp}</div>` : ''}
-
-      <div class="section">
-        <div class="section-title">Formações Matriculadas (Memberkit)</div>
-        <div class="course-list">${turmasHtml}</div>
-      </div>
 
       <div class="section">
         <div class="section-title">Participação em Sparrings</div>
@@ -725,8 +726,12 @@ function render(aluno, sparring, mk) {
       </div>
 
       <div class="section">
-        <div class="section-title">Progresso nas Aulas (Memberkit)</div>
-        <div class="progress-list">${renderProgresso(atividades)}</div>
+        <div class="section-title">Progresso na Memberkit</div>
+        ${turmasHtml ? `<div class="course-list" style="margin-bottom:14px">${turmasHtml}</div>` : ''}
+        <a href="${mkLink}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:var(--purple);color:white;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
+          🔗 Ver progresso completo na Memberkit
+        </a>
+        <p style="font-size:11px;color:var(--muted);margin-top:8px;">Abre direto no perfil do aluno na plataforma.</p>
       </div>
 
     </div>
@@ -735,58 +740,98 @@ function render(aluno, sparring, mk) {
   document.getElementById('result').style.display = 'block';
 }
 
+// ─── LISTA DE RESULTADOS ──────────────────────────
+function mostrarLista(alunos) {
+  document.getElementById('result').innerHTML = `
+    <div style="background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.06);overflow:hidden;">
+      <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">
+          ${alunos.length} resultado(s) encontrado(s) — clique para ver o perfil
+        </div>
+      </div>
+      ${alunos.map((a, i) => `
+        <div onclick="selecionarAluno(${i})" style="padding:14px 24px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:14px;transition:background 0.15s;" onmouseover="this.style.background='var(--purple-faint)'" onmouseout="this.style.background='white'">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--purple);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${iniciais(a.nome)}</div>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;">${a.nome}</div>
+            <div style="font-size:12px;color:var(--muted);">${a.email} ${a.expiracao ? '· Exp: ' + a.expiracao : ''}</div>
+          </div>
+          <div style="color:var(--purple);font-size:18px;">›</div>
+        </div>
+      `).join('')}
+    </div>`;
+  document.getElementById('result').style.display = 'block';
+}
+
+let _alunosEncontrados = [];
+let _sparringCache = null;
+let _cfgCache = null;
+
+async function selecionarAluno(idx) {
+  const aluno = _alunosEncontrados[idx];
+  const cfg = _cfgCache;
+  setError('');
+  document.getElementById('result').style.display = 'none';
+  setStatus(true, 'Buscando sparrings...');
+
+  let sparring = null;
+  try {
+    sparring = await buscarNaPlanilhaSparrings(aluno.email || aluno.nome, cfg.sheet2);
+    if (!sparring) sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
+  } catch(e) {}
+
+  setStatus(false);
+  render(aluno, sparring, null, cfg.subdomain);
+}
+
 // ─── BUSCA PRINCIPAL ──────────────────────────────
 async function buscar() {
   const query = document.getElementById('searchInput').value.trim();
   if (!query) return;
 
   const cfg = getConfig();
+  _cfgCache = cfg;
   const btn = document.getElementById('searchBtn');
   btn.disabled = true;
   setError('');
   document.getElementById('result').style.display = 'none';
   setStatus(true, 'Buscando nas planilhas...');
 
-  let aluno = null, sparring = null, mk = null;
+  let alunos = [], sparring = null;
   const erros = [];
 
   try {
     setStatus(true, 'Consultando planilha de alunos...');
-    aluno = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
+    alunos = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
   } catch(e) { erros.push('Planilha alunos: ' + e.message); }
-
-  try {
-    setStatus(true, 'Consultando planilha de sparrings...');
-    sparring = await buscarNaPlanilhaSparrings(query, cfg.sheet2);
-  } catch(e) { erros.push('Planilha sparrings: ' + e.message); }
-
-  try {
-    setStatus(true, 'Consultando Memberkit...');
-    // Tenta com o email encontrado na planilha, ou com a query original
-    const mkQuery = aluno?.email || query;
-    mk = await buscarMemberkit(mkQuery, cfg.apiKey, cfg.subdomain);
-  } catch(e) { erros.push('Memberkit: ' + e.message); }
 
   setStatus(false);
   btn.disabled = false;
 
-  if (erros.length) {
-    setError('⚠️ Alguns erros: ' + erros.join(' | '));
-  }
+  if (erros.length) setError('⚠️ ' + erros.join(' | '));
 
-  if (!aluno && !sparring && !mk) {
+  if (!alunos.length) {
     document.getElementById('result').innerHTML = `
       <div class="not-found">
         <div style="font-size:40px">🔍</div>
         <h3 style="margin-top:12px">Aluno não encontrado</h3>
-        <p>Nenhum resultado para "<strong>${query}</strong>" nas planilhas ou na Memberkit.</p>
-        <p style="margin-top:8px">Tente com o e-mail ou confira a ortografia do nome.</p>
+        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
+        <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
       </div>`;
     document.getElementById('result').style.display = 'block';
     return;
   }
 
-  render(aluno, sparring, mk);
+  // Se só um resultado, vai direto
+  if (alunos.length === 1) {
+    _alunosEncontrados = alunos;
+    await selecionarAluno(0);
+    return;
+  }
+
+  // Múltiplos — mostra lista
+  _alunosEncontrados = alunos;
+  mostrarLista(alunos);
 }
 
 // Enter para buscar
