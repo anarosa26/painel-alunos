@@ -776,9 +776,20 @@ async function selecionarAluno(idx) {
 
   let sparring = null;
   try {
-    sparring = await buscarNaPlanilhaSparrings(aluno.email || aluno.nome, cfg.sheet2);
-    if (!sparring) sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
-  } catch(e) {}
+    // Tenta primeiro pelo email, depois pelo nome
+    if (aluno.email) {
+      sparring = await buscarNaPlanilhaSparrings(aluno.email, cfg.sheet2);
+    }
+    if (!sparring && aluno.nome) {
+      // Tenta com o primeiro nome + sobrenome
+      sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
+    }
+    if (!sparring && aluno.nome) {
+      // Tenta só com o primeiro nome
+      const primeiroNome = aluno.nome.split(' ')[0];
+      sparring = await buscarNaPlanilhaSparrings(primeiroNome, cfg.sheet2);
+    }
+  } catch(e) { console.log('Sparring erro:', e); }
 
   setStatus(false);
   render(aluno, sparring, null, cfg.subdomain);
