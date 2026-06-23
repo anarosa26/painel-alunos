@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Alunos — Vendas Pro</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --purple: #7B2D8B;
+    --purple-light: #9B4DAB;
+    --purple-dark: #5a1f68;
+    --purple-faint: #f5eef8;
+    --bg: #f8f7fa;
+    --card: #ffffff;
+    --border: #e8e0ed;
+    --text: #1a1a2e;
+    --muted: #7a7090;
+    --green: #2e7d32;
+    --green-bg: #e8f5e9;
+    --red: #c62828;
+    --red-bg: #ffebee;
+    --amber: #e65100;
+    --amber-bg: #fff3e0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--purple);
+    color: white;
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 12px rgba(123,45,139,0.3);
+  }
+
+  .logo {
+    width: 40px; height: 40px;
+    background: white;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; color: var(--purple); font-size: 16px;
+  }
+
+  header h1 { font-size: 18px; font-weight: 600; }
+  header p { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+
+  .main { max-width: 900px; margin: 0 auto; padding: 32px 20px; }
+
+  /* SEARCH */
+  .search-box {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 28px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+    margin-bottom: 28px;
+  }
+
+  .search-box h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: var(--purple-dark); }
+
+  .search-row { display: flex; gap: 12px; }
+
+  .search-row input {
+    flex: 1;
+    padding: 12px 16px;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .search-row input:focus { border-color: var(--purple); }
+
+  .search-row button {
+    padding: 12px 24px;
+    background: var(--purple);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    white-space: nowrap;
+  }
+
+  .search-row button:hover { background: var(--purple-light); }
+  .search-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* CONFIG */
+  .config-toggle {
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--purple);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  .config-panel {
+    display: none;
+    margin-top: 14px;
+    padding: 16px;
+    background: var(--purple-faint);
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+
+  .config-panel.open { display: block; }
+
+  .config-panel label { font-size: 12px; font-weight: 500; display: block; margin-bottom: 4px; color: var(--purple-dark); }
+
+  .config-panel input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: 'Inter', sans-serif;
+    margin-bottom: 12px;
+    background: white;
+  }
+
+  .config-panel .save-btn {
+    padding: 8px 18px;
+    background: var(--purple);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* STATUS */
+  #status {
+    text-align: center;
+    padding: 20px;
+    color: var(--muted);
+    font-size: 14px;
+    display: none;
+  }
+
+  .spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border);
+    border-top-color: var(--purple);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 12px;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* RESULT CARD */
+  #result { display: none; }
+
+  .profile-header {
+    background: var(--purple);
+    color: white;
+    border-radius: 16px 16px 0 0;
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .avatar {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    border: 3px solid rgba(255,255,255,0.4);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; font-weight: 700;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+
+  .profile-info h2 { font-size: 20px; font-weight: 700; }
+  .profile-info p { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+
+  .badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 6px;
+    background: rgba(255,255,255,0.2);
+  }
+
+  .body-card {
+    background: var(--card);
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+
+  /* SECTIONS */
+  .section {
+    padding: 20px 28px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section:last-child { border-bottom: none; }
+
+  .section-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  /* INFO GRID */
+  .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+
+  .info-item label { font-size: 11px; color: var(--muted); font-weight: 500; display: block; margin-bottom: 3px; }
+  .info-item span { font-size: 14px; font-weight: 500; }
+
+  /* SPARRINGS */
+  .sparring-grid { display: flex; gap: 16px; flex-wrap: wrap; }
+
+  .sparring-card {
+    flex: 1; min-width: 90px;
+    background: var(--purple-faint);
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid var(--border);
+  }
+
+  .sparring-card .num { font-size: 28px; font-weight: 700; color: var(--purple); }
+  .sparring-card .lbl { font-size: 11px; color: var(--muted); margin-top: 4px; font-weight: 500; }
+
+  /* PROGRESS */
+  .progress-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .prog-item {}
+  .prog-header { display: flex; justify-content: space-between; margin-bottom: 5px; }
+  .prog-header span:first-child { font-size: 13px; }
+  .prog-header span:last-child { font-size: 13px; font-weight: 600; }
+
+  .prog-bar-bg {
+    height: 7px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .prog-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s ease;
+  }
+
+  /* DIVERGENCE ALERT */
+  .alert {
+    padding: 14px 18px;
+    border-radius: 10px;
+    font-size: 13px;
+    margin-top: 4px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .alert.warn { background: var(--amber-bg); color: var(--amber); border: 1px solid #ffcc80; }
+  .alert.ok { background: var(--green-bg); color: var(--green); border: 1px solid #a5d6a7; }
+  .alert.error { background: var(--red-bg); color: var(--red); border: 1px solid #ef9a9a; }
+  .alert.info { background: var(--purple-faint); color: var(--purple-dark); border: 1px solid var(--border); }
+
+  .alert-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+
+  /* MEMBERKIT COURSES */
+  .course-list { display: flex; flex-direction: column; gap: 8px; }
+
+  .course-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--purple-faint);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+
+  .course-item .course-name { font-weight: 500; }
+  .course-item .course-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  .status-active { background: var(--green-bg); color: var(--green); }
+  .status-inactive { background: var(--red-bg); color: var(--red); }
+
+  /* NOT FOUND */
+  .not-found {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 40px;
+    text-align: center;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+  }
+
+  .not-found p { color: var(--muted); font-size: 14px; margin-top: 8px; }
+
+  /* ERROR */
+  #error-box {
+    display: none;
+    background: var(--red-bg);
+    border: 1px solid #ef9a9a;
+    border-radius: 12px;
+    padding: 16px 20px;
+    color: var(--red);
+    font-size: 13px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 600px) {
+    .search-row { flex-direction: column; }
+    .profile-header { flex-direction: column; text-align: center; }
+    .sparring-grid { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">VP</div>
+  <div>
+    <h1>Painel de Alunos</h1>
+    <p>Vendas Pro · Consulta integrada</p>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- SEARCH -->
+  <div class="search-box">
+    <h2>🔍 Buscar aluno</h2>
+    <div class="search-row">
+      <input type="text" id="searchInput" placeholder="Digite o nome ou e-mail do aluno..." />
+      <button id="searchBtn" onclick="buscar()">Buscar</button>
+    </div>
+    <div class="config-toggle" onclick="toggleConfig()">⚙️ Configurações da API</div>
+    <div class="config-panel" id="configPanel">
+      <label>API Key Memberkit</label>
+      <input type="text" id="cfgApiKey" placeholder="Ex: 3p95g92cKSxs2Zr1KghH5mvs" />
+      <label>Subdomínio Memberkit (ex: vendaspro)</label>
+      <input type="text" id="cfgSubdomain" placeholder="Ex: metodo-def" />
+      <label>ID Planilha de Alunos (Google Sheets)</label>
+      <input type="text" id="cfgSheet1" placeholder="19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k" />
+      <label>ID Planilha de Sparrings</label>
+      <input type="text" id="cfgSheet2" placeholder="1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ" />
+      <label>Chave API Google (opcional — para planilhas privadas)</label>
+      <input type="text" id="cfgGoogleKey" placeholder="Deixe em branco se a planilha for pública" />
+      <button class="save-btn" onclick="salvarConfig()">💾 Salvar configurações</button>
+    </div>
+  </div>
+
+  <div id="error-box"></div>
+  <div id="status"><div class="spinner"></div><span id="statusMsg">Buscando dados...</span></div>
+  <div id="result"></div>
+
+</div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────
+const DEFAULTS = {
+  apiKey: '3p95g92cKSxs2Zr1KghH5mvs',
+  subdomain: 'metodo-def',
+  sheet1: '19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k',
+  sheet2: '1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ',
+  googleKey: ''
+};
+
+function getConfig() {
+  return {
+    apiKey: localStorage.getItem('vp_apiKey') || DEFAULTS.apiKey,
+    subdomain: localStorage.getItem('vp_subdomain') || DEFAULTS.subdomain,
+    sheet1: localStorage.getItem('vp_sheet1') || DEFAULTS.sheet1,
+    sheet2: localStorage.getItem('vp_sheet2') || DEFAULTS.sheet2,
+    googleKey: localStorage.getItem('vp_googleKey') || DEFAULTS.googleKey,
+  };
+}
+
+function salvarConfig() {
+  localStorage.setItem('vp_apiKey', document.getElementById('cfgApiKey').value);
+  localStorage.setItem('vp_subdomain', document.getElementById('cfgSubdomain').value);
+  localStorage.setItem('vp_sheet1', document.getElementById('cfgSheet1').value);
+  localStorage.setItem('vp_sheet2', document.getElementById('cfgSheet2').value);
+  localStorage.setItem('vp_googleKey', document.getElementById('cfgGoogleKey').value);
+  alert('Configurações salvas!');
+}
+
+function toggleConfig() {
+  const p = document.getElementById('configPanel');
+  p.classList.toggle('open');
+  if (p.classList.contains('open')) {
+    const c = getConfig();
+    document.getElementById('cfgApiKey').value = c.apiKey;
+    document.getElementById('cfgSubdomain').value = c.subdomain;
+    document.getElementById('cfgSheet1').value = c.sheet1;
+    document.getElementById('cfgSheet2').value = c.sheet2;
+    document.getElementById('cfgGoogleKey').value = c.googleKey;
+  }
+}
+
+// ─── UTILS ────────────────────────────────────────
+function normalize(str) {
+  return (str || '').toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function pctColor(v) {
+  if (v >= 90) return '#2e7d32';
+  if (v >= 50) return '#e65100';
+  return '#c62828';
+}
+
+function expiracaoLabel(dateStr) {
+  if (!dateStr) return { label: 'Não informada', cls: 'info' };
+  const d = new Date(dateStr.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'));
+  if (isNaN(d)) return { label: dateStr, cls: 'info' };
+  const hoje = new Date();
+  const diff = Math.ceil((d - hoje) / (1000*60*60*24));
+  if (diff < 0) return { label: `Expirado há ${Math.abs(diff)} dias`, cls: 'error' };
+  if (diff <= 30) return { label: `Expira em ${diff} dias ⚠️`, cls: 'warn' };
+  return { label: d.toLocaleDateString('pt-BR'), cls: 'ok' };
+}
+
+function iniciais(nome) {
+  return (nome || '?').split(' ').slice(0,2).map(p => p[0]).join('').toUpperCase();
+}
+
+function setStatus(show, msg) {
+  document.getElementById('status').style.display = show ? 'block' : 'none';
+  document.getElementById('statusMsg').textContent = msg || 'Buscando...';
+}
+
+function setError(msg) {
+  const el = document.getElementById('error-box');
+  if (msg) { el.textContent = msg; el.style.display = 'block'; }
+  else el.style.display = 'none';
+}
+
+// ─── SHEETS ────────────────────────────────────────
+async function fetchSheetCSV(sheetId, gid = '0') {
+  const url = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Planilha não acessível (${r.status}). Verifique se está compartilhada publicamente.`);
+  return r.text();
+}
+
+function parseCSV(text) {
+  const rows = [];
+  const lines = text.split('\n');
+  for (const line of lines) {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    cols.push(cur.trim());
+    rows.push(cols);
+  }
+  return rows;
+}
+
+async function buscarNaPlanilhaAlunos(query, sheetId) {
+  // Aba principal: gid 494969041
+  const text = await fetchSheetCSV(sheetId, '494969041');
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+
+  const header = rows[0];
+  const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
+  const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
+  const telIdx = header.findIndex(h => normalize(h).includes('telefone'));
+  const dataIdx = header.findIndex(h => normalize(h) === 'data');
+  const expIdx = header.findIndex(h => normalize(h).includes('expira'));
+
+  const q = normalize(query);
+  for (const row of rows.slice(1)) {
+    const nome = row[nomeIdx] || '';
+    const email = row[emailIdx] || '';
+    if (normalize(nome).includes(q) || normalize(email).includes(q)) {
+      return {
+        nome: nome,
+        email: email,
+        telefone: row[telIdx] || '',
+        dataInicio: row[dataIdx] || '',
+        expiracao: row[expIdx] || '',
+      };
+    }
+  }
+  return null;
+}
+
+async function buscarNaPlanilhaSparrings(query, sheetId) {
+  // Aba principal: gid 345849370
+  const text = await fetchSheetCSV(sheetId, '345849370');
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+
+  const header = rows[0];
+  const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
+  const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
+  // Colunas D, E, F = índices 3, 4, 5 (0-based)
+  const oIdx = 3, lIdx = 4, vIdx = 5;
+  const expIdx = header.findIndex(h => normalize(h).includes('expira'));
+
+  const q = normalize(query);
+  for (const row of rows.slice(1)) {
+    const nome = row[nomeIdx] || '';
+    const email = row[emailIdx] || '';
+    if (normalize(nome).includes(q) || normalize(email).includes(q)) {
+      return {
+        ouvinte: parseInt(row[oIdx]) || 0,
+        lead: parseInt(row[lIdx]) || 0,
+        vendedor: parseInt(row[vIdx]) || 0,
+        expiracao: row[expIdx] || '',
+      };
+    }
+  }
+  return null;
+}
+
+// ─── MEMBERKIT ────────────────────────────────────
+async function buscarMemberkit(query, apiKey, subdomain) {
+  // Busca por email ou nome
+  const base = `https://${subdomain}.memberkit.com.br/api/v1`;
+  const isEmail = query.includes('@');
+
+  let url;
+  if (isEmail) {
+    url = `${base}/users?api_key=${apiKey}&email=${encodeURIComponent(query)}&per_page=5`;
+  } else {
+    url = `${base}/users?api_key=${apiKey}&per_page=50`;
+  }
+
+  const r = await fetch(url);
+  if (!r.ok) {
+    if (r.status === 401) throw new Error('API Key inválida. Verifique nas configurações.');
+    throw new Error(`Erro Memberkit: ${r.status}`);
+  }
+
+  const data = await r.json();
+  let users = Array.isArray(data) ? data : (data.users || []);
+
+  if (!isEmail) {
+    const q = normalize(query);
+    users = users.filter(u => normalize(u.name || u.full_name || '').includes(q) || normalize(u.email || '').includes(q));
+  }
+
+  if (!users.length) return null;
+  const user = users[0];
+
+  // Buscar atividades (progresso)
+  let atividades = [];
+  try {
+    const ra = await fetch(`${base}/users/${user.id}/activities?api_key=${apiKey}&per_page=50`);
+    if (ra.ok) {
+      const ad = await ra.json();
+      atividades = Array.isArray(ad) ? ad : (ad.activities || []);
+    }
+  } catch(e) {}
+
+  // Buscar cursos/turmas matriculadas
+  let turmas = [];
+  try {
+    const rt = await fetch(`${base}/users/${user.id}/classrooms?api_key=${apiKey}`);
+    if (rt.ok) {
+      const td = await rt.json();
+      turmas = Array.isArray(td) ? td : (td.classrooms || []);
+    }
+  } catch(e) {}
+
+  return { user, atividades, turmas };
+}
+
+// ─── RENDER ───────────────────────────────────────
+function renderProgresso(atividades) {
+  if (!atividades.length) return '<p style="color:var(--muted);font-size:13px;">Nenhuma atividade registrada na Memberkit.</p>';
+
+  // Agrupa por curso
+  const cursos = {};
+  for (const a of atividades) {
+    const c = a.course_name || a.classroom_name || 'Geral';
+    if (!cursos[c]) cursos[c] = { total: 0, done: 0 };
+    cursos[c].total++;
+    if (a.status === 'completed' || a.completed) cursos[c].done++;
+  }
+
+  return Object.entries(cursos).map(([nome, v]) => {
+    const pct = v.total ? Math.round((v.done / v.total) * 100) : 0;
+    const cor = pctColor(pct);
+    return `
+      <div class="prog-item">
+        <div class="prog-header">
+          <span>${nome}</span>
+          <span style="color:${cor}">${pct}%</span>
+        </div>
+        <div class="prog-bar-bg">
+          <div class="prog-bar" style="width:${pct}%;background:${cor}"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function comparaExpiracao(dataSheet, dataMk) {
+  if (!dataSheet && !dataMk) return null;
+  if (!dataMk) return `<div class="alert info"><span class="alert-icon">ℹ️</span> Data de expiração não encontrada na Memberkit.</div>`;
+  if (!dataSheet) return `<div class="alert info"><span class="alert-icon">ℹ️</span> Data de expiração não encontrada na planilha de alunos.</div>`;
+
+  const parseDate = s => {
+    const d = new Date(s.replace(/(\d{2})\/(\d{2})\/(\d{4})/, '$3-$2-$1'));
+    return isNaN(d) ? new Date(s) : d;
+  };
+
+  const d1 = parseDate(dataSheet);
+  const d2 = parseDate(dataMk);
+  const diffDays = Math.round(Math.abs(d1 - d2) / (1000*60*60*24));
+
+  if (diffDays === 0) {
+    return `<div class="alert ok"><span class="alert-icon">✅</span> Datas de expiração conferem nas duas fontes: <strong>${d1.toLocaleDateString('pt-BR')}</strong></div>`;
+  } else if (diffDays <= 5) {
+    return `<div class="alert warn"><span class="alert-icon">⚠️</span> Pequena divergência de ${diffDays} dia(s) — Planilha: <strong>${d1.toLocaleDateString('pt-BR')}</strong> · Memberkit: <strong>${d2.toLocaleDateString('pt-BR')}</strong></div>`;
+  } else {
+    return `<div class="alert error"><span class="alert-icon">🚨</span> Divergência de ${diffDays} dias! Planilha: <strong>${d1.toLocaleDateString('pt-BR')}</strong> · Memberkit: <strong>${d2.toLocaleDateString('pt-BR')}</strong> — verifique qual está correto.</div>`;
+  }
+}
+
+function render(aluno, sparring, mk) {
+  const nome = aluno?.nome || mk?.user?.name || mk?.user?.full_name || 'Aluno não encontrado';
+  const email = aluno?.email || mk?.user?.email || '';
+  const tel = aluno?.telefone || '';
+  const dataInicio = aluno?.dataInicio || '';
+  const expSheet = aluno?.expiracao || sparring?.expiracao || '';
+  const expMk = mk?.user?.expires_at ? new Date(mk.user.expires_at).toLocaleDateString('pt-BR') : '';
+  const foto = mk?.user?.avatar_url || mk?.user?.photo_url || '';
+  const turmas = mk?.turmas || [];
+  const atividades = mk?.atividades || [];
+
+  const expInfo = expiracaoLabel(expSheet || expMk);
+  const divComp = comparaExpiracao(expSheet, expMk);
+
+  const spOuvinte = sparring?.ouvinte ?? '—';
+  const spLead = sparring?.lead ?? '—';
+  const spVendedor = sparring?.vendedor ?? '—';
+
+  const avatarHtml = foto
+    ? `<img src="${foto}" alt="${nome}" onerror="this.style.display='none';this.parentElement.textContent='${iniciais(nome)}'">`
+    : iniciais(nome);
+
+  const turmasHtml = turmas.length
+    ? turmas.map(t => {
+        const ativo = t.status === 'active' || !t.status;
+        return `<div class="course-item">
+          <span class="course-name">${t.name || t.course_name || 'Formação'}</span>
+          <span class="course-status ${ativo ? 'status-active' : 'status-inactive'}">${ativo ? 'Ativo' : 'Inativo'}</span>
+        </div>`;
+      }).join('')
+    : '<p style="color:var(--muted);font-size:13px;">Nenhuma turma encontrada na Memberkit.</p>';
+
+  document.getElementById('result').innerHTML = `
+    <div class="profile-header">
+      <div class="avatar">${avatarHtml}</div>
+      <div class="profile-info">
+        <h2>${nome}</h2>
+        <p>${email}${tel ? ' · ' + tel : ''}</p>
+        <span class="badge">Acesso até: ${expSheet || expMk || 'não informado'}</span>
+      </div>
+    </div>
+    <div class="body-card">
+
+      <div class="section">
+        <div class="section-title">Dados Cadastrais</div>
+        <div class="info-grid">
+          <div class="info-item"><label>E-mail</label><span>${email || '—'}</span></div>
+          <div class="info-item"><label>Telefone</label><span>${tel || '—'}</span></div>
+          <div class="info-item"><label>Data de início</label><span>${dataInicio || '—'}</span></div>
+          <div class="info-item"><label>Expiração (planilha)</label><span>${expSheet || '—'}</span></div>
+          <div class="info-item"><label>Expiração (Memberkit)</label><span>${expMk || '—'}</span></div>
+        </div>
+      </div>
+
+      ${divComp ? `<div class="section"><div class="section-title">Verificação de Datas</div>${divComp}</div>` : ''}
+
+      <div class="section">
+        <div class="section-title">Formações Matriculadas (Memberkit)</div>
+        <div class="course-list">${turmasHtml}</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Participação em Sparrings</div>
+        <div class="sparring-grid">
+          <div class="sparring-card"><div class="num">${spOuvinte}</div><div class="lbl">Ouvinte</div></div>
+          <div class="sparring-card"><div class="num">${spLead}</div><div class="lbl">Lead</div></div>
+          <div class="sparring-card"><div class="num">${spVendedor}</div><div class="lbl">Vendedor</div></div>
+          <div class="sparring-card"><div class="num" style="color:var(--purple)">${(sparring?.ouvinte||0)+(sparring?.lead||0)+(sparring?.vendedor||0)}</div><div class="lbl">Total</div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Progresso nas Aulas (Memberkit)</div>
+        <div class="progress-list">${renderProgresso(atividades)}</div>
+      </div>
+
+    </div>
+  `;
+
+  document.getElementById('result').style.display = 'block';
+}
+
+// ─── BUSCA PRINCIPAL ──────────────────────────────
+async function buscar() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) return;
+
+  const cfg = getConfig();
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  setError('');
+  document.getElementById('result').style.display = 'none';
+  setStatus(true, 'Buscando nas planilhas...');
+
+  let aluno = null, sparring = null, mk = null;
+  const erros = [];
+
+  try {
+    setStatus(true, 'Consultando planilha de alunos...');
+    aluno = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
+  } catch(e) { erros.push('Planilha alunos: ' + e.message); }
+
+  try {
+    setStatus(true, 'Consultando planilha de sparrings...');
+    sparring = await buscarNaPlanilhaSparrings(query, cfg.sheet2);
+  } catch(e) { erros.push('Planilha sparrings: ' + e.message); }
+
+  try {
+    setStatus(true, 'Consultando Memberkit...');
+    // Tenta com o email encontrado na planilha, ou com a query original
+    const mkQuery = aluno?.email || query;
+    mk = await buscarMemberkit(mkQuery, cfg.apiKey, cfg.subdomain);
+  } catch(e) { erros.push('Memberkit: ' + e.message); }
+
+  setStatus(false);
+  btn.disabled = false;
+
+  if (erros.length) {
+    setError('⚠️ Alguns erros: ' + erros.join(' | '));
+  }
+
+  if (!aluno && !sparring && !mk) {
+    document.getElementById('result').innerHTML = `
+      <div class="not-found">
+        <div style="font-size:40px">🔍</div>
+        <h3 style="margin-top:12px">Aluno não encontrado</h3>
+        <p>Nenhum resultado para "<strong>${query}</strong>" nas planilhas ou na Memberkit.</p>
+        <p style="margin-top:8px">Tente com o e-mail ou confira a ortografia do nome.</p>
+      </div>`;
+    document.getElementById('result').style.display = 'block';
+    return;
+  }
+
+  render(aluno, sparring, mk);
+}
+
+// Enter para buscar
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buscar();
+});
+</script>
+</body>
+</html>
