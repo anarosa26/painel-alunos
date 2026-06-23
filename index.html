@@ -530,11 +530,14 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
   const oIdx = 3, lIdx = 4, vIdx = 5;
   const expIdx = header.findIndex(h => normalize(h).includes('expira'));
 
-  const q = normalize(query);
+  const q = normalize(query).replace(/\s+/g, '');
   for (const row of rows.slice(1)) {
     const nome = row[nomeIdx] || '';
     const email = row[emailIdx] || '';
-    if (normalize(nome).includes(q) || normalize(email).includes(q)) {
+    // Compara email sem espaços e sem case, e nome normalizado
+    const emailNorm = normalize(email).replace(/\s+/g, '');
+    const nomeNorm = normalize(nome);
+    if (emailNorm === q || emailNorm.includes(q) || nomeNorm.includes(normalize(query))) {
       return {
         ouvinte: parseInt(row[oIdx]) || 0,
         lead: parseInt(row[lIdx]) || 0,
@@ -841,14 +844,4 @@ async function buscar() {
   }
 
   // Múltiplos — mostra lista
-  _alunosEncontrados = alunos;
-  mostrarLista(alunos);
-}
-
-// Enter para buscar
-document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') buscar();
-});
-</script>
-</body>
-</html>
+  _alunosEncontr
