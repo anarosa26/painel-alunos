@@ -748,12 +748,10 @@ function perfilParaHTML(aluno, sparring, subdomain, formacoes) {
   const formacaoLabel = fList.map(f => nomeCompletoF(f.nome)).join(' + ');
 
   const formacoesRows = fList.map(f => `
-    <tr>
-      <td style="padding:4px 8px 4px 0;color:#7a7090;">${nomeCompletoF(f.nome)}</td>
-      <td style="padding:4px 0;font-weight:500;">${f.inicio || '—'}</td>
-      <td style="padding:4px 8px 4px 16px;color:#7a7090;">Expiração</td>
-      <td style="padding:4px 0;font-weight:500;color:${f.exp ? '#2e7d32' : '#7a7090'};">${f.exp || '—'}</td>
-    </tr>`).join('');
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:8px 12px;background:#f5eef8;border-radius:8px;border-left:3px solid #7B2D8B;">
+      <span style="font-size:12px;font-weight:700;color:#7B2D8B;">${nomeCompletoF(f.nome)}</span>
+      <span style="font-size:11px;color:#7a7090;">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
+    </div>`).join('');
 
   return `
     <div class="card">
@@ -761,8 +759,6 @@ function perfilParaHTML(aluno, sparring, subdomain, formacoes) {
         <div class="avatar-circle">${(nome||'?').split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase()}</div>
         <div class="header-info">
           <h2>${nome}</h2>
-          <p>${email}${tel ? ' &nbsp;·&nbsp; ' + tel : ''}</p>
-          <span class="badge">${formacaoLabel}</span>
         </div>
       </div>
       <div class="card-body">
@@ -773,15 +769,7 @@ function perfilParaHTML(aluno, sparring, subdomain, formacoes) {
         </div>
         <div class="divider"></div>
         <div class="section-label">Formações e Datas de Acesso</div>
-        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;">
-          <tr style="color:#7a7090;font-size:10px;">
-            <td style="padding:2px 8px 4px 0;">Formação</td>
-            <td style="padding:2px 0 4px;">Início</td>
-            <td style="padding:2px 8px 4px 16px;">Expiração</td>
-            <td></td>
-          </tr>
-          ${formacoesRows}
-        </table>
+        ${formacoesRows}
         <div class="divider"></div>
         <div class="section-label">Participação em Sparrings</div>
         <div class="sparring-row">
@@ -801,14 +789,18 @@ function exportarPDF() {
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Perfis de Alunos — Vendas Pro</title>
+<title>Relatório de Alunos</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  @page { margin: 16mm 14mm; size: A4; }
+  @page { margin: 14mm; size: A4; }
   @media print {
     html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    head title { display: none; }
+    @page { margin: 14mm; size: A4; }
+    @page :first { margin-top: 14mm; }
+    /* Suprime cabeçalho e rodapé nativos do navegador */
+    head, header, footer { display: none !important; }
+    a[href]::after { content: none !important; }
   }
   body { font-family: 'Inter', Arial, sans-serif; background: #f8f7fa; color: #1a1a2e; }
   .page { max-width: 760px; margin: 0 auto; padding: 24px 20px; }
@@ -861,7 +853,11 @@ function exportarPDF() {
   ${_perfisParaPDF.map(p => perfilParaHTML(p.aluno, p.sparring, cfg.subdomain, p.formacoes)).join('')}
   <div class="footer">Vendas Pro · Comercial Pro · ${new Date().getFullYear()}</div>
 </div>
-<script>window.onload = () => { setTimeout(() => window.print(), 500); }<\/script>
+<script>
+window.onload = () => {
+  document.title = '';
+  setTimeout(() => window.print(), 600);
+}<\/script>
 </body>
 </html>`;
 
@@ -910,9 +906,9 @@ function render(aluno, sparring, mk, subdomain, liderPro, especializacao) {
 
   const formacoesHtml = formacoes.length
     ? formacoes.map(f => `
-        <div class="course-item">
-          <span class="course-name">${nomeCompleto(f.nome)}</span>
-          <span style="font-size:11px;color:var(--muted);">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:10px 14px;background:var(--purple-faint);border-radius:10px;border-left:3px solid var(--purple);">
+          <span style="font-size:13px;font-weight:700;color:var(--purple);">${nomeCompleto(f.nome)}</span>
+          <span style="font-size:12px;color:var(--muted);">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
         </div>`).join('')
     : `<p style="color:var(--muted);font-size:13px;">Não encontrado nas planilhas de formação.</p>`;
 
