@@ -810,4 +810,168 @@ function render(aluno, sparring, mk, subdomain) {
 
       <div class="section" style="background:var(--purple-faint);">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
-  
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--purple-dark);">Exportar este perfil em PDF</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;">Adicione à seleção e exporte quando quiser</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="adicionarAoPDF()" id="btnAdd" style="padding:8px 16px;background:${jaAdicionado ? '#e8f5e9' : 'var(--purple)'};color:${jaAdicionado ? '#2e7d32' : 'white'};border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              ${jaAdicionado ? '✅ Adicionado' : '+ Adicionar à seleção'}
+            </button>
+            <button onclick="verSelecao()" style="padding:8px 16px;background:white;color:var(--purple);border:1px solid var(--purple);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              📋 Ver seleção (<span id="countPDF">${_perfisParaPDF.length}</span>)
+            </button>
+            <button onclick="exportarPDF()" style="padding:8px 16px;background:#1a1a2e;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              ⬇️ Exportar PDF
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  // Guarda dados do aluno atual para possível adição
+  window._alunoAtual = { aluno, sparring };
+  document.getElementById('result').style.display = 'block';
+}
+
+function adicionarAoPDF() {
+  if (!window._alunoAtual) return;
+  const { aluno, sparring } = window._alunoAtual;
+  const email = aluno?.email || '';
+  const jaAdicionado = _perfisParaPDF.some(p => p.aluno?.email === email);
+  if (jaAdicionado) {
+    _perfisParaPDF = _perfisParaPDF.filter(p => p.aluno?.email !== email);
+    document.getElementById('btnAdd').textContent = '+ Adicionar à seleção';
+    document.getElementById('btnAdd').style.background = 'var(--purple)';
+    document.getElementById('btnAdd').style.color = 'white';
+  } else {
+    _perfisParaPDF.push({ aluno, sparring });
+    document.getElementById('btnAdd').textContent = '✅ Adicionado';
+    document.getElementById('btnAdd').style.background = '#e8f5e9';
+    document.getElementById('btnAdd').style.color = '#2e7d32';
+  }
+  document.getElementById('countPDF').textContent = _perfisParaPDF.length;
+}
+
+function verSelecao() {
+  if (!_perfisParaPDF.length) { alert('Nenhum perfil adicionado ainda.'); return; }
+  const nomes = _perfisParaPDF.map((p,i) => `${i+1}. ${p.aluno?.nome || p.aluno?.email}`).join('\n');
+  if (confirm(`Perfis selecionados (${_perfisParaPDF.length}):\n\n${nomes}\n\nDeseja exportar agora?`)) {
+    exportarPDF();
+  }
+}
+
+// ─── LISTA DE RESULTADOS ──────────────────────────
+function mostrarLista(alunos) {
+  document.getElementById('result').innerHTML = `
+    <div style="background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.06);overflow:hidden;">
+      <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">
+          ${alunos.length} resultado(s) encontrado(s) — clique para ver o perfil
+        </div>
+      </div>
+      ${alunos.map((a, i) => `
+        <div onclick="selecionarAluno(${i})" style="padding:14px 24px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:14px;transition:background 0.15s;" onmouseover="this.style.background='var(--purple-faint)'" onmouseout="this.style.background='white'">
+          <div style="width:38px;height:38px;border-radius:50%;background:var(--purple);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${iniciais(a.nome)}</div>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;">${a.nome}</div>
+            <div style="font-size:12px;color:var(--muted);">${a.email} ${a.expiracao ? '· Exp: ' + a.expiracao : ''}</div>
+          </div>
+          <div style="color:var(--purple);font-size:18px;">›</div>
+        </div>
+      `).join('')}
+    </div>`;
+  document.getElementById('result').style.display = 'block';
+}
+
+let _alunosEncontrados = [];
+let _sparringCache = null;
+let _cfgCache = null;
+
+async function selecionarAluno(idx) {
+  const aluno = _alunosEncontrados[idx];
+  const cfg = _cfgCache;
+  setError('');
+  document.getElementById('result').style.display = 'none';
+  setStatus(true, 'Buscando sparrings...');
+
+  let sparring = null;
+  try {
+    // Tenta primeiro pelo email, depois pelo nome
+    if (aluno.email) {
+      sparring = await buscarNaPlanilhaSparrings(aluno.email, cfg.sheet2);
+    }
+    if (!sparring && aluno.nome) {
+      // Tenta com o primeiro nome + sobrenome
+      sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
+    }
+    if (!sparring && aluno.nome) {
+      // Tenta só com o primeiro nome
+      const primeiroNome = aluno.nome.split(' ')[0];
+      sparring = await buscarNaPlanilhaSparrings(primeiroNome, cfg.sheet2);
+    }
+  } catch(e) { console.log('Sparring erro:', e); }
+
+  setStatus(false);
+  render(aluno, sparring, null, cfg.subdomain);
+}
+
+// ─── BUSCA PRINCIPAL ──────────────────────────────
+async function buscar() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) return;
+
+  const cfg = getConfig();
+  _cfgCache = cfg;
+  const btn = document.getElementById('searchBtn');
+  btn.disabled = true;
+  setError('');
+  document.getElementById('result').style.display = 'none';
+  setStatus(true, 'Buscando nas planilhas...');
+
+  let alunos = [], sparring = null;
+  const erros = [];
+
+  try {
+    setStatus(true, 'Consultando planilha de alunos...');
+    alunos = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
+  } catch(e) { erros.push('Planilha alunos: ' + e.message); }
+
+  setStatus(false);
+  btn.disabled = false;
+
+  if (erros.length) setError('⚠️ ' + erros.join(' | '));
+
+  if (!alunos.length) {
+    document.getElementById('result').innerHTML = `
+      <div class="not-found">
+        <div style="font-size:40px">🔍</div>
+        <h3 style="margin-top:12px">Aluno não encontrado</h3>
+        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
+        <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
+      </div>`;
+    document.getElementById('result').style.display = 'block';
+    return;
+  }
+
+  // Se só um resultado, vai direto
+  if (alunos.length === 1) {
+    _alunosEncontrados = alunos;
+    await selecionarAluno(0);
+    return;
+  }
+
+  // Múltiplos — mostra lista
+  _alunosEncontrados = alunos;
+  mostrarLista(alunos);
+}
+
+// Enter para buscar
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buscar();
+});
+</script>
+</body>
+</html>
