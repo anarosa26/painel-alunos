@@ -1036,6 +1036,9 @@ let _alunosEncontrados = [];
 let _sparringCache = null;
 let _cfgCache = null;
 
+let _liderProCache = null;
+let _especializacaoCache = null;
+
 async function selecionarAluno(idx) {
   const aluno = _alunosEncontrados[idx];
   const cfg = _cfgCache;
@@ -1044,19 +1047,31 @@ async function selecionarAluno(idx) {
   setStatus(true, 'Buscando sparrings e formações...');
 
   let sparring = null;
-  let liderPro = null;
-  let especializacao = null;
+  let liderPro = _liderProCache;
+  let especializacao = _especializacaoCache;
 
-  // Busca em paralelo nas três fontes extras
+  // Limpa cache após usar
+  _liderProCache = null;
+  _especializacaoCache = null;
+
   const q = aluno.email || aluno.nome;
   const qNome = aluno.nome;
 
   try {
-    [sparring, liderPro, especializacao] = await Promise.all([
+    // Sparring sempre busca; Líder Pro e Especialização só buscam se não vieram do cache
+    const promises = [
       buscarNaPlanilhaSparrings(q, cfg.sheet2).catch(() => null),
-      buscarNaPlanilhaLiderPro(q, cfg.sheetLider).catch(() => null),
-      buscarNaPlanilhaEspecializacao(q, cfg.sheetEspec).catch(() => null),
-    ]);
+    ];
+    if (!liderPro) promises.push(buscarNaPlanilhaLiderPro(q, cfg.sheetLider).catch(() => null));
+    if (!especializacao) promises.push(buscarNaPlanilhaEspecializacao(q, cfg.sheetEspec).catch(() => null));
+
+    const results = await Promise.all(promises);
+    sparring = results[0];
+    if (!liderPro && results[1] !== undefined) liderPro = results[1];
+    if (!especializacao && results[promises.length - 1] !== undefined && promises.length > 1) {
+      especializacao = !liderPro ? results[1] : results[2];
+    }
+
     // Tenta por nome se email não encontrou
     if (!sparring) sparring = await buscarNaPlanilhaSparrings(qNome, cfg.sheet2).catch(() => null);
     if (!liderPro) liderPro = await buscarNaPlanilhaLiderPro(qNome, cfg.sheetLider).catch(() => null);
@@ -1080,41 +1095,56 @@ async function buscar() {
   document.getElementById('result').style.display = 'none';
   setStatus(true, 'Buscando nas planilhas...');
 
-  let alunos = [], sparring = null;
-  const erros = [];
+  let closerPro = [], liderPro = null, especializacao = null;
 
   try {
-    setStatus(true, 'Consultando planilha de alunos...');
-    alunos = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
-  } catch(e) { erros.push('Planilha alunos: ' + e.message); }
+    // Busca simultânea nas 3 planilhas
+    [closerPro, liderPro, especializacao] = await Promise.all([
+      buscarNaPlanilhaAlunos(query, cfg.sheet1).catch(() => []),
+      buscarNaPlanilhaLiderPro(query, cfg.sheetLider).catch(() => null),
+      buscarNaPlanilhaEspecializacao(query, cfg.sheetEspec).catch(() => null),
+    ]);
+  } catch(e) { setError('⚠️ Erro ao buscar: ' + e.message); }
 
   setStatus(false);
   btn.disabled = false;
 
-  if (erros.length) setError('⚠️ ' + erros.join(' | '));
-
-  if (!alunos.length) {
+  // Nenhuma das 3 encontrou
+  const encontrouAlgo = closerPro.length > 0 || liderPro || especializacao;
+  if (!encontrouAlgo) {
     document.getElementById('result').innerHTML = `
       <div class="not-found">
         <div style="font-size:40px">🔍</div>
         <h3 style="margin-top:12px">Aluno não encontrado</h3>
-        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
+        <p>Nenhum resultado para "<strong>${query}</strong>" nas planilhas.</p>
         <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
       </div>`;
     document.getElementById('result').style.display = 'block';
     return;
   }
 
-  // Se só um resultado, vai direto
-  if (alunos.length === 1) {
-    _alunosEncontrados = alunos;
+  // Monta aluno base — usa Closer Pro se encontrou, senão usa Líder Pro ou Especialização como base
+  let alunosBase = closerPro.length > 0 ? closerPro : [];
+
+  // Se não está na Closer Pro mas está em outra planilha, monta um aluno base sintético
+  if (!alunosBase.length) {
+    const base = liderPro || especializacao;
+    alunosBase = [{ nome: base.nome, email: base.email, telefone: base.telefone, dataInicio: base.dataInicio, expiracao: base.expiracao }];
+  }
+
+  _alunosEncontrados = alunosBase;
+
+  // Se só um resultado, vai direto passando já os dados das outras planilhas
+  if (alunosBase.length === 1) {
+    // Enriquece com Líder Pro e Especialização já encontrados
+    _liderProCache = liderPro;
+    _especializacaoCache = especializacao;
     await selecionarAluno(0);
     return;
   }
 
   // Múltiplos — mostra lista
-  _alunosEncontrados = alunos;
-  mostrarLista(alunos);
+  mostrarLista(alunosBase);
 }
 
 // Enter para buscar
