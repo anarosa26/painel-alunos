@@ -500,6 +500,7 @@ async function buscarNaPlanilhaAlunos(query, sheetId) {
   const telIdx = header.findIndex(h => normalize(h).includes('telefone'));
   const dataIdx = header.findIndex(h => normalize(h) === 'data');
   const expIdx = header.findIndex(h => normalize(h).includes('expira'));
+  const statusIdx = header.findIndex(h => normalize(h).includes('status'));
 
   const q = normalize(query);
   const resultados = [];
@@ -513,6 +514,7 @@ async function buscarNaPlanilhaAlunos(query, sheetId) {
         telefone: row[telIdx] || '',
         dataInicio: row[dataIdx] || '',
         expiracao: row[expIdx] || '',
+        status: row[statusIdx] || '',
       });
     }
   }
@@ -524,8 +526,8 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
   const rows = parseCSV(text);
   if (rows.length < 2) return null;
 
-  // Estrutura real: Pontuação(0) | Nome(1) | Email(2) | Ouvinte(3) | Lead(4) | Vendedor(5) | Dt Expiração(6)
-  const nomeIdx = 1, emailIdx = 2, oIdx = 3, lIdx = 4, vIdx = 5, expIdx = 6;
+  // Estrutura real: Pontuação(0) | Nome(1) | Email(2) | Ouvinte(3) | Lead(4) | Vendedor(5) | Dt Expiração(6) | Status(7) | Situação(8) | Formação(9)
+  const nomeIdx = 1, emailIdx = 2, oIdx = 3, lIdx = 4, vIdx = 5, expIdx = 6, formacaoIdx = 9;
 
   const q = normalize(query);
   for (const row of rows.slice(1)) {
@@ -538,6 +540,7 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
         lead: parseInt(row[lIdx]) || 0,
         vendedor: parseInt(row[vIdx]) || 0,
         expiracao: row[expIdx] || '',
+        formacao: row[formacaoIdx] || '',
       };
     }
   }
@@ -649,54 +652,129 @@ function comparaExpiracao(dataSheet, dataMk) {
   }
 }
 
+// ─── SELEÇÃO PARA PDF ─────────────────────────────
+let _perfisParaPDF = [];
+
+function perfilParaHTML(aluno, sparring, subdomain) {
+  const nome = aluno?.nome || '—';
+  const email = aluno?.email || '—';
+  const tel = aluno?.telefone || '';
+  const dataInicio = aluno?.dataInicio || '—';
+  const expSheet = aluno?.expiracao || sparring?.expiracao || '—';
+  const formacao = sparring?.formacao || aluno?.status || '—';
+  const spOuvinte = sparring?.ouvinte ?? 0;
+  const spLead = sparring?.lead ?? 0;
+  const spVendedor = sparring?.vendedor ?? 0;
+  const spTotal = spOuvinte + spLead + spVendedor;
+  const mkEmail = encodeURIComponent(email);
+  const mkLink = `https://${subdomain}.memberkit.com.br/admin/users?q=${mkEmail}`;
+
+  return `
+    <div style="font-family:Arial,sans-serif;margin-bottom:32px;break-inside:avoid;border:1px solid #e0d8e8;border-radius:12px;overflow:hidden;">
+      <div style="background:#7B2D8B;color:white;padding:16px 20px;">
+        <div style="font-size:18px;font-weight:700;">${nome}</div>
+        <div style="font-size:12px;opacity:0.85;margin-top:4px;">${email}${tel ? ' · ' + tel : ''}</div>
+        <div style="font-size:11px;font-weight:600;margin-top:6px;background:rgba(255,255,255,0.2);display:inline-block;padding:2px 10px;border-radius:20px;">${formacao}</div>
+      </div>
+      <div style="padding:16px 20px;background:white;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;">
+          <tr>
+            <td style="padding:4px 8px 4px 0;color:#7a7090;width:140px;">E-mail</td>
+            <td style="padding:4px 0;font-weight:500;">${email}</td>
+            <td style="padding:4px 8px 4px 16px;color:#7a7090;width:140px;">Telefone</td>
+            <td style="padding:4px 0;font-weight:500;">${tel || '—'}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 8px 4px 0;color:#7a7090;">Data de início</td>
+            <td style="padding:4px 0;font-weight:500;">${dataInicio}</td>
+            <td style="padding:4px 8px 4px 16px;color:#7a7090;">Expiração do acesso</td>
+            <td style="padding:4px 0;font-weight:500;color:#2e7d32;">${expSheet}</td>
+          </tr>
+          <tr>
+            <td style="padding:4px 8px 4px 0;color:#7a7090;">Formação</td>
+            <td style="padding:4px 0;font-weight:500;" colspan="3">${formacao}</td>
+          </tr>
+        </table>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7a7090;margin-bottom:10px;">Participação em Sparrings</div>
+        <div style="display:flex;gap:10px;">
+          ${[['Ouvinte',spOuvinte],['Lead',spLead],['Vendedor',spVendedor],['Total',spTotal]].map(([l,v])=>`
+            <div style="flex:1;background:#f5eef8;border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:22px;font-weight:700;color:#7B2D8B;">${v}</div>
+              <div style="font-size:10px;color:#7a7090;margin-top:2px;">${l}</div>
+            </div>`).join('')}
+        </div>
+        <div style="margin-top:14px;font-size:11px;color:#7a7090;">🔗 Memberkit: ${mkLink}</div>
+      </div>
+    </div>`;
+}
+
+function exportarPDF() {
+  if (!_perfisParaPDF.length) { alert('Nenhum perfil selecionado para exportar.'); return; }
+  const cfg = getConfig();
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Perfis de Alunos — Vendas Pro</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: white; padding: 24px; max-width: 800px; margin: 0 auto; }
+      h1 { color: #7B2D8B; font-size: 18px; margin-bottom: 4px; }
+      .sub { color: #7a7090; font-size: 12px; margin-bottom: 24px; }
+      @media print { body { padding: 0; } }
+    </style>
+  </head><body>
+    <h1>Relatório de Perfis — Vendas Pro</h1>
+    <div class="sub">Gerado em ${new Date().toLocaleDateString('pt-BR')} · ${_perfisParaPDF.length} aluno(s)</div>
+    ${_perfisParaPDF.map(p => perfilParaHTML(p.aluno, p.sparring, cfg.subdomain)).join('')}
+    <script>window.onload = () => { window.print(); }<\/script>
+  </body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
 function render(aluno, sparring, mk, subdomain) {
-  const nome = aluno?.nome || mk?.user?.name || mk?.user?.full_name || 'Aluno não encontrado';
+  const nome = aluno?.nome || mk?.user?.name || '—';
   const email = aluno?.email || mk?.user?.email || '';
   const tel = aluno?.telefone || '';
   const dataInicio = aluno?.dataInicio || '';
   const expSheet = aluno?.expiracao || sparring?.expiracao || '';
-  const expMk = mk?.user?.expires_at ? new Date(mk.user.expires_at).toLocaleDateString('pt-BR') : '';
+  const formacao = sparring?.formacao || aluno?.status || '';
   const foto = mk?.user?.avatar_url || mk?.user?.photo_url || '';
-  const turmas = mk?.turmas || [];
-  const atividades = mk?.atividades || [];
 
-  const expInfo = expiracaoLabel(expSheet || expMk);
-  const divComp = comparaExpiracao(expSheet, expMk);
+  const divComp = comparaExpiracao(expSheet, '');
 
   const spOuvinte = sparring?.ouvinte ?? '—';
   const spLead = sparring?.lead ?? '—';
   const spVendedor = sparring?.vendedor ?? '—';
+  const spTotal = (sparring?.ouvinte||0)+(sparring?.lead||0)+(sparring?.vendedor||0);
 
   const avatarHtml = foto
     ? `<img src="${foto}" alt="${nome}" onerror="this.style.display='none';this.parentElement.textContent='${iniciais(nome)}'">`
     : iniciais(nome);
 
-  // Link direto Memberkit
   const mkEmail = encodeURIComponent(email);
   const mkLink = email ? `https://${subdomain}.memberkit.com.br/admin/users?q=${mkEmail}` : `https://${subdomain}.memberkit.com.br/admin/users`;
 
-  // Expiração com cor
   const expLabel = expSheet
     ? (() => { const ei = expiracaoLabel(expSheet); return `<span style="color:var(--${ei.cls === 'ok' ? 'green' : ei.cls === 'warn' ? 'amber' : ei.cls === 'error' ? 'red' : 'muted'})">${expSheet}</span>`; })()
     : '<span style="color:var(--muted)">—</span>';
 
-  const turmasHtml = turmas.length
-    ? turmas.map(t => {
-        const ativo = t.status === 'active' || !t.status;
-        return `<div class="course-item">
-          <span class="course-name">${t.name || t.course_name || 'Formação'}</span>
-          <span class="course-status ${ativo ? 'status-active' : 'status-inactive'}">${ativo ? 'Ativo' : 'Inativo'}</span>
-        </div>`;
-      }).join('')
-    : '';
+  // Link WhatsApp — remove tudo que não é número
+  const telNumeros = tel.replace(/\D/g, '');
+  const telDisplay = tel || '—';
+  const telHtml = telNumeros
+    ? `<a href="https://wa.me/${telNumeros.startsWith('55') ? telNumeros : '55'+telNumeros}" target="_blank" style="color:var(--purple);text-decoration:none;font-weight:500;">📱 ${telDisplay}</a>`
+    : '—';
+
+  // Verifica se já está na lista de PDF
+  const jaAdicionado = _perfisParaPDF.some(p => p.aluno?.email === email);
 
   document.getElementById('result').innerHTML = `
     <div class="profile-header">
       <div class="avatar">${avatarHtml}</div>
       <div class="profile-info">
         <h2>${nome}</h2>
-        <p>${email}${tel ? ' · ' + tel : ''}</p>
-        <span class="badge">Acesso até: ${expSheet || '—'}</span>
+        <p>${email}</p>
+        ${formacao ? `<span class="badge">${formacao}</span>` : ''}
       </div>
     </div>
     <div class="body-card">
@@ -705,13 +783,12 @@ function render(aluno, sparring, mk, subdomain) {
         <div class="section-title">Dados Cadastrais</div>
         <div class="info-grid">
           <div class="info-item"><label>E-mail</label><span>${email || '—'}</span></div>
-          <div class="info-item"><label>Telefone</label><span>${tel || '—'}</span></div>
+          <div class="info-item"><label>Telefone</label>${telHtml}</div>
           <div class="info-item"><label>Data de início</label><span>${dataInicio || '—'}</span></div>
           <div class="info-item"><label>Expiração do acesso</label>${expLabel}</div>
+          <div class="info-item"><label>Formação</label><span>${formacao || '—'}</span></div>
         </div>
       </div>
-
-      ${divComp ? `<div class="section"><div class="section-title">Verificação de Datas</div>${divComp}</div>` : ''}
 
       <div class="section">
         <div class="section-title">Participação em Sparrings</div>
@@ -719,134 +796,18 @@ function render(aluno, sparring, mk, subdomain) {
           <div class="sparring-card"><div class="num">${spOuvinte}</div><div class="lbl">Ouvinte</div></div>
           <div class="sparring-card"><div class="num">${spLead}</div><div class="lbl">Lead</div></div>
           <div class="sparring-card"><div class="num">${spVendedor}</div><div class="lbl">Vendedor</div></div>
-          <div class="sparring-card"><div class="num" style="color:var(--purple)">${(sparring?.ouvinte||0)+(sparring?.lead||0)+(sparring?.vendedor||0)}</div><div class="lbl">Total</div></div>
+          <div class="sparring-card"><div class="num" style="color:var(--purple)">${spTotal}</div><div class="lbl">Total</div></div>
         </div>
       </div>
 
       <div class="section">
-        <div class="section-title">Progresso na Memberkit</div>
-        ${turmasHtml ? `<div class="course-list" style="margin-bottom:14px">${turmasHtml}</div>` : ''}
+        <div class="section-title">Memberkit</div>
         <a href="${mkLink}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:var(--purple);color:white;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
           🔗 Ver progresso completo na Memberkit
         </a>
         <p style="font-size:11px;color:var(--muted);margin-top:8px;">Abre direto no perfil do aluno na plataforma.</p>
       </div>
 
-    </div>
-  `;
-
-  document.getElementById('result').style.display = 'block';
-}
-
-// ─── LISTA DE RESULTADOS ──────────────────────────
-function mostrarLista(alunos) {
-  document.getElementById('result').innerHTML = `
-    <div style="background:white;border-radius:16px;box-shadow:0 2px 16px rgba(0,0,0,0.06);overflow:hidden;">
-      <div style="padding:16px 24px;border-bottom:1px solid var(--border);">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);">
-          ${alunos.length} resultado(s) encontrado(s) — clique para ver o perfil
-        </div>
-      </div>
-      ${alunos.map((a, i) => `
-        <div onclick="selecionarAluno(${i})" style="padding:14px 24px;border-bottom:1px solid var(--border);cursor:pointer;display:flex;align-items:center;gap:14px;transition:background 0.15s;" onmouseover="this.style.background='var(--purple-faint)'" onmouseout="this.style.background='white'">
-          <div style="width:38px;height:38px;border-radius:50%;background:var(--purple);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;">${iniciais(a.nome)}</div>
-          <div style="flex:1;">
-            <div style="font-weight:600;font-size:14px;">${a.nome}</div>
-            <div style="font-size:12px;color:var(--muted);">${a.email} ${a.expiracao ? '· Exp: ' + a.expiracao : ''}</div>
-          </div>
-          <div style="color:var(--purple);font-size:18px;">›</div>
-        </div>
-      `).join('')}
-    </div>`;
-  document.getElementById('result').style.display = 'block';
-}
-
-let _alunosEncontrados = [];
-let _sparringCache = null;
-let _cfgCache = null;
-
-async function selecionarAluno(idx) {
-  const aluno = _alunosEncontrados[idx];
-  const cfg = _cfgCache;
-  setError('');
-  document.getElementById('result').style.display = 'none';
-  setStatus(true, 'Buscando sparrings...');
-
-  let sparring = null;
-  try {
-    // Tenta primeiro pelo email, depois pelo nome
-    if (aluno.email) {
-      sparring = await buscarNaPlanilhaSparrings(aluno.email, cfg.sheet2);
-    }
-    if (!sparring && aluno.nome) {
-      // Tenta com o primeiro nome + sobrenome
-      sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
-    }
-    if (!sparring && aluno.nome) {
-      // Tenta só com o primeiro nome
-      const primeiroNome = aluno.nome.split(' ')[0];
-      sparring = await buscarNaPlanilhaSparrings(primeiroNome, cfg.sheet2);
-    }
-  } catch(e) { console.log('Sparring erro:', e); }
-
-  setStatus(false);
-  render(aluno, sparring, null, cfg.subdomain);
-}
-
-// ─── BUSCA PRINCIPAL ──────────────────────────────
-async function buscar() {
-  const query = document.getElementById('searchInput').value.trim();
-  if (!query) return;
-
-  const cfg = getConfig();
-  _cfgCache = cfg;
-  const btn = document.getElementById('searchBtn');
-  btn.disabled = true;
-  setError('');
-  document.getElementById('result').style.display = 'none';
-  setStatus(true, 'Buscando nas planilhas...');
-
-  let alunos = [], sparring = null;
-  const erros = [];
-
-  try {
-    setStatus(true, 'Consultando planilha de alunos...');
-    alunos = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
-  } catch(e) { erros.push('Planilha alunos: ' + e.message); }
-
-  setStatus(false);
-  btn.disabled = false;
-
-  if (erros.length) setError('⚠️ ' + erros.join(' | '));
-
-  if (!alunos.length) {
-    document.getElementById('result').innerHTML = `
-      <div class="not-found">
-        <div style="font-size:40px">🔍</div>
-        <h3 style="margin-top:12px">Aluno não encontrado</h3>
-        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
-        <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
-      </div>`;
-    document.getElementById('result').style.display = 'block';
-    return;
-  }
-
-  // Se só um resultado, vai direto
-  if (alunos.length === 1) {
-    _alunosEncontrados = alunos;
-    await selecionarAluno(0);
-    return;
-  }
-
-  // Múltiplos — mostra lista
-  _alunosEncontrados = alunos;
-  mostrarLista(alunos);
-}
-
-// Enter para buscar
-document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') buscar();
-});
-</script>
-</body>
-</html>
+      <div class="section" style="background:var(--purple-faint);">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  
