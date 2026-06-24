@@ -387,8 +387,10 @@
 const DEFAULTS = {
   apiKey: '3p95g92cKSxs2Zr1KghH5mvs',
   subdomain: 'metodo-def',
-  sheet1: '19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k',
-  sheet2: '1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ',
+  sheet1: '19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k',   // Closer Pro (alunos)
+  sheet2: '1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ',   // Sparrings
+  sheetLider: '1a5QsiwMR6aUkYgL_dqGOAG9F0hj3TpIgYJIUTzdXrtA', // Líder Pro
+  sheetEspec: '1icemfzsW5ukuJWuHc42mX8Dbehj9NOKgKMh7o0pmivo',  // Especialização HT
   googleKey: ''
 };
 
@@ -398,6 +400,8 @@ function getConfig() {
     subdomain: localStorage.getItem('vp_subdomain') || DEFAULTS.subdomain,
     sheet1: localStorage.getItem('vp_sheet1') || DEFAULTS.sheet1,
     sheet2: localStorage.getItem('vp_sheet2') || DEFAULTS.sheet2,
+    sheetLider: localStorage.getItem('vp_sheetLider') || DEFAULTS.sheetLider,
+    sheetEspec: localStorage.getItem('vp_sheetEspec') || DEFAULTS.sheetEspec,
     googleKey: localStorage.getItem('vp_googleKey') || DEFAULTS.googleKey,
   };
 }
@@ -547,7 +551,57 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
   return null;
 }
 
-// ─── MEMBERKIT ────────────────────────────────────
+// ─── LÍDER PRO ────────────────────────────────────
+// Estrutura: CONTENT_ID(0) | Data Cadastro(1) | Ano(2) | Mês(3) | Data Venda(4) | Nome(5) | Email(6) | Telefone(7) | ... sem coluna de expiração
+async function buscarNaPlanilhaLiderPro(query, sheetId) {
+  const text = await fetchSheetCSV(sheetId, '1895108430');
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+
+  const q = normalize(query);
+  for (const row of rows.slice(1)) {
+    const nome = row[5] || '';
+    const email = row[6] || '';
+    if (!nome && !email) continue;
+    if (normalize(email) === q || normalize(email).includes(q) || normalize(nome).includes(q)) {
+      return {
+        formacao: 'Líder Pro',
+        nome: nome,
+        email: email,
+        telefone: row[7] || '',
+        dataInicio: row[4] || '',
+        expiracao: '', // Líder Pro não tem coluna de expiração
+      };
+    }
+  }
+  return null;
+}
+
+// ─── ESPECIALIZAÇÃO CLOSER HIGH TICKET ────────────
+// Estrutura: CONTENT_ID(0) | Data Cadastro(1) | Ano(2) | Mês(3) | Data Venda(4) | Período(5) | Expiração(6) | Nome(7) | Email(8) | Telefone(9)
+async function buscarNaPlanilhaEspecializacao(query, sheetId) {
+  const text = await fetchSheetCSV(sheetId, '0');
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+
+  const q = normalize(query);
+  for (const row of rows.slice(1)) {
+    const nome = row[7] || '';
+    const email = row[8] || '';
+    if (!nome && !email) continue;
+    if (normalize(email) === q || normalize(email).includes(q) || normalize(nome).includes(q)) {
+      return {
+        formacao: 'Especialização Closer HT',
+        nome: nome,
+        email: email,
+        telefone: row[9] || '',
+        dataInicio: row[4] || '',
+        expiracao: row[6] || '',
+      };
+    }
+  }
+  return null;
+}
 async function buscarMemberkit(query, apiKey, subdomain) {
   // Busca por email ou nome
   const base = `https://${subdomain}.memberkit.com.br/api/v1`;
@@ -655,17 +709,29 @@ function comparaExpiracao(dataSheet, dataMk) {
 // ─── SELEÇÃO PARA PDF ─────────────────────────────
 let _perfisParaPDF = [];
 
-function perfilParaHTML(aluno, sparring, subdomain) {
+function perfilParaHTML(aluno, sparring, subdomain, formacoes) {
   const nome = aluno?.nome || '—';
   const email = aluno?.email || '—';
   const tel = aluno?.telefone || '';
-  const dataInicio = aluno?.dataInicio || '—';
-  const expSheet = aluno?.expiracao || sparring?.expiracao || '—';
-  const formacao = sparring?.formacao || aluno?.status || '—';
   const spOuvinte = sparring?.ouvinte ?? 0;
   const spLead = sparring?.lead ?? 0;
   const spVendedor = sparring?.vendedor ?? 0;
   const spTotal = spOuvinte + spLead + spVendedor;
+
+  // Formações: usa o array se disponível, senão monta básico
+  const fList = formacoes?.length
+    ? formacoes
+    : [{ nome: sparring?.formacao || 'Closer Pro', inicio: aluno?.dataInicio || '', exp: aluno?.expiracao || sparring?.expiracao || '' }];
+
+  const formacaoLabel = fList.map(f => f.nome).join(' + ');
+
+  const formacoesRows = fList.map(f => `
+    <tr>
+      <td style="padding:4px 8px 4px 0;color:#7a7090;">${f.nome}</td>
+      <td style="padding:4px 0;font-weight:500;">${f.inicio || '—'}</td>
+      <td style="padding:4px 8px 4px 16px;color:#7a7090;">Expiração</td>
+      <td style="padding:4px 0;font-weight:500;color:${f.exp ? '#2e7d32' : '#7a7090'};">${f.exp || '—'}</td>
+    </tr>`).join('');
 
   return `
     <div class="card">
@@ -674,7 +740,7 @@ function perfilParaHTML(aluno, sparring, subdomain) {
         <div class="header-info">
           <h2>${nome}</h2>
           <p>${email}${tel ? ' &nbsp;·&nbsp; ' + tel : ''}</p>
-          <span class="badge">${formacao}</span>
+          <span class="badge">${formacaoLabel}</span>
         </div>
       </div>
       <div class="card-body">
@@ -682,10 +748,18 @@ function perfilParaHTML(aluno, sparring, subdomain) {
         <div class="data-grid">
           <div class="data-item"><span class="lbl">E-mail</span><span class="val">${email}</span></div>
           <div class="data-item"><span class="lbl">Telefone</span><span class="val">${tel || '—'}</span></div>
-          <div class="data-item"><span class="lbl">Data de início</span><span class="val">${dataInicio}</span></div>
-          <div class="data-item"><span class="lbl">Expiração do acesso</span><span class="val exp">${expSheet}</span></div>
-          <div class="data-item"><span class="lbl">Formação</span><span class="val">${formacao}</span></div>
         </div>
+        <div class="divider"></div>
+        <div class="section-label">Formações e Datas de Acesso</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:4px;">
+          <tr style="color:#7a7090;font-size:10px;">
+            <td style="padding:2px 8px 4px 0;">Formação</td>
+            <td style="padding:2px 0 4px;">Início</td>
+            <td style="padding:2px 8px 4px 16px;">Expiração</td>
+            <td></td>
+          </tr>
+          ${formacoesRows}
+        </table>
         <div class="divider"></div>
         <div class="section-label">Participação em Sparrings</div>
         <div class="sparring-row">
@@ -712,6 +786,7 @@ function exportarPDF() {
   @page { margin: 16mm 14mm; size: A4; }
   @media print {
     html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    head title { display: none; }
   }
   body { font-family: 'Inter', Arial, sans-serif; background: #f8f7fa; color: #1a1a2e; }
   .page { max-width: 760px; margin: 0 auto; padding: 24px 20px; }
@@ -740,11 +815,11 @@ function exportarPDF() {
   .divider { height: 1px; background: #e8e0ed; margin: 14px 0; }
   .sparring-row { display: flex; gap: 10px; }
   .sp-card { flex: 1; background: #f5eef8; border-radius: 10px; padding: 12px 8px; text-align: center; }
-  .sp-total { background: #7B2D8B; }
+  .sp-total { background: #f5eef8; }
   .sp-num { font-size: 24px; font-weight: 700; color: #7B2D8B; }
-  .sp-total .sp-num { color: white; }
+  .sp-total .sp-num { color: #7B2D8B; }
   .sp-lbl { font-size: 10px; color: #7a7090; margin-top: 2px; }
-  .sp-total .sp-lbl { color: rgba(255,255,255,0.8); }
+  .sp-total .sp-lbl { color: #7a7090; }
   .footer { text-align: center; font-size: 10px; color: #aaa; margin-top: 16px; padding-top: 12px; border-top: 1px solid #e8e0ed; }
 </style>
 </head>
@@ -761,7 +836,7 @@ function exportarPDF() {
       <div style="font-weight:600;font-size:13px;">${new Date().toLocaleDateString('pt-BR')}</div>
     </div>
   </div>
-  ${_perfisParaPDF.map(p => perfilParaHTML(p.aluno, p.sparring, cfg.subdomain)).join('')}
+  ${_perfisParaPDF.map(p => perfilParaHTML(p.aluno, p.sparring, cfg.subdomain, p.formacoes)).join('')}
   <div class="footer">Vendas Pro · Comercial Pro · ${new Date().getFullYear()}</div>
 </div>
 <script>window.onload = () => { setTimeout(() => window.print(), 500); }<\/script>
@@ -773,41 +848,42 @@ function exportarPDF() {
   window.open(url, '_blank');
 }
 
-function render(aluno, sparring, mk, subdomain) {
-  const nome = aluno?.nome || mk?.user?.name || '—';
+function render(aluno, sparring, mk, subdomain, liderPro, especializacao) {
+  const nome = aluno?.nome || '—';
   const email = aluno?.email || mk?.user?.email || '';
-  const tel = aluno?.telefone || '';
-  const dataInicio = aluno?.dataInicio || '';
-  const expSheet = aluno?.expiracao || sparring?.expiracao || '';
-  const formacao = sparring?.formacao || aluno?.status || '';
-  const foto = mk?.user?.avatar_url || mk?.user?.photo_url || '';
+  const tel = aluno?.telefone || liderPro?.telefone || especializacao?.telefone || '';
 
-  const divComp = comparaExpiracao(expSheet, '');
+  // Monta lista de formações encontradas
+  const formacoes = [];
+  if (aluno?.expiracao || aluno?.dataInicio) {
+    formacoes.push({ nome: sparring?.formacao || 'Closer Pro', inicio: aluno?.dataInicio || '', exp: aluno?.expiracao || '' });
+  }
+  if (liderPro) formacoes.push({ nome: 'Líder Pro', inicio: liderPro.dataInicio || '', exp: liderPro.expiracao || '' });
+  if (especializacao) formacoes.push({ nome: 'Especialização Closer HT', inicio: especializacao.dataInicio || '', exp: especializacao.expiracao || '' });
+  if (!formacoes.length && sparring?.formacao) formacoes.push({ nome: sparring.formacao, inicio: '', exp: sparring.expiracao || '' });
 
   const spOuvinte = sparring?.ouvinte ?? '—';
   const spLead = sparring?.lead ?? '—';
   const spVendedor = sparring?.vendedor ?? '—';
   const spTotal = (sparring?.ouvinte||0)+(sparring?.lead||0)+(sparring?.vendedor||0);
 
-  const avatarHtml = foto
-    ? `<img src="${foto}" alt="${nome}" onerror="this.style.display='none';this.parentElement.textContent='${iniciais(nome)}'">`
-    : iniciais(nome);
-
+  const avatarHtml = iniciais(nome);
   const mkEmail = encodeURIComponent(email);
   const mkLink = email ? `https://${subdomain}.memberkit.com.br/admin/users?q=${mkEmail}` : `https://${subdomain}.memberkit.com.br/admin/users`;
 
-  const expLabel = expSheet
-    ? (() => { const ei = expiracaoLabel(expSheet); return `<span style="color:var(--${ei.cls === 'ok' ? 'green' : ei.cls === 'warn' ? 'amber' : ei.cls === 'error' ? 'red' : 'muted'})">${expSheet}</span>`; })()
-    : '<span style="color:var(--muted)">—</span>';
-
-  // Link WhatsApp — remove tudo que não é número
   const telNumeros = tel.replace(/\D/g, '');
-  const telDisplay = tel || '—';
   const telHtml = telNumeros
-    ? `<a href="https://wa.me/${telNumeros.startsWith('55') ? telNumeros : '55'+telNumeros}" target="_blank" style="color:var(--purple);text-decoration:none;font-weight:500;">📱 ${telDisplay}</a>`
+    ? `<a href="https://wa.me/${telNumeros.startsWith('55') ? telNumeros : '55'+telNumeros}" target="_blank" style="color:var(--purple);text-decoration:none;font-weight:500;">📱 ${tel}</a>`
     : '—';
 
-  // Verifica se já está na lista de PDF
+  const formacoesHtml = formacoes.length
+    ? formacoes.map(f => `
+        <div class="course-item">
+          <span class="course-name">${f.nome}</span>
+          <span style="font-size:11px;color:var(--muted);">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
+        </div>`).join('')
+    : `<p style="color:var(--muted);font-size:13px;">Não encontrado nas planilhas de formação.</p>`;
+
   const jaAdicionado = _perfisParaPDF.some(p => p.aluno?.email === email);
 
   document.getElementById('result').innerHTML = `
@@ -816,7 +892,7 @@ function render(aluno, sparring, mk, subdomain) {
       <div class="profile-info">
         <h2>${nome}</h2>
         <p>${email}</p>
-        ${formacao ? `<span class="badge">${formacao}</span>` : ''}
+        ${formacoes.map(f => `<span class="badge">${f.nome}</span>`).join(' ')}
       </div>
     </div>
     <div class="body-card">
@@ -826,10 +902,12 @@ function render(aluno, sparring, mk, subdomain) {
         <div class="info-grid">
           <div class="info-item"><label>E-mail</label><span>${email || '—'}</span></div>
           <div class="info-item"><label>Telefone</label>${telHtml}</div>
-          <div class="info-item"><label>Data de início</label><span>${dataInicio || '—'}</span></div>
-          <div class="info-item"><label>Expiração do acesso</label>${expLabel}</div>
-          <div class="info-item"><label>Formação</label><span>${formacao || '—'}</span></div>
         </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Formações e Datas de Acesso</div>
+        <div class="course-list">${formacoesHtml}</div>
       </div>
 
       <div class="section">
@@ -873,14 +951,13 @@ function render(aluno, sparring, mk, subdomain) {
     </div>
   `;
 
-  // Guarda dados do aluno atual para possível adição
-  window._alunoAtual = { aluno, sparring };
+  window._alunoAtual = { aluno, sparring, liderPro, especializacao, formacoes };
   document.getElementById('result').style.display = 'block';
 }
 
 function adicionarAoPDF() {
   if (!window._alunoAtual) return;
-  const { aluno, sparring } = window._alunoAtual;
+  const { aluno, sparring, formacoes } = window._alunoAtual;
   const email = aluno?.email || '';
   const jaAdicionado = _perfisParaPDF.some(p => p.aluno?.email === email);
   if (jaAdicionado) {
@@ -889,7 +966,7 @@ function adicionarAoPDF() {
     document.getElementById('btnAdd').style.background = 'var(--purple)';
     document.getElementById('btnAdd').style.color = 'white';
   } else {
-    _perfisParaPDF.push({ aluno, sparring });
+    _perfisParaPDF.push({ aluno, sparring, formacoes });
     document.getElementById('btnAdd').textContent = '✅ Adicionado';
     document.getElementById('btnAdd').style.background = '#e8f5e9';
     document.getElementById('btnAdd').style.color = '#2e7d32';
@@ -937,27 +1014,30 @@ async function selecionarAluno(idx) {
   const cfg = _cfgCache;
   setError('');
   document.getElementById('result').style.display = 'none';
-  setStatus(true, 'Buscando sparrings...');
+  setStatus(true, 'Buscando sparrings e formações...');
 
   let sparring = null;
+  let liderPro = null;
+  let especializacao = null;
+
+  // Busca em paralelo nas três fontes extras
+  const q = aluno.email || aluno.nome;
+  const qNome = aluno.nome;
+
   try {
-    // Tenta primeiro pelo email, depois pelo nome
-    if (aluno.email) {
-      sparring = await buscarNaPlanilhaSparrings(aluno.email, cfg.sheet2);
-    }
-    if (!sparring && aluno.nome) {
-      // Tenta com o primeiro nome + sobrenome
-      sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
-    }
-    if (!sparring && aluno.nome) {
-      // Tenta só com o primeiro nome
-      const primeiroNome = aluno.nome.split(' ')[0];
-      sparring = await buscarNaPlanilhaSparrings(primeiroNome, cfg.sheet2);
-    }
-  } catch(e) { console.log('Sparring erro:', e); }
+    [sparring, liderPro, especializacao] = await Promise.all([
+      buscarNaPlanilhaSparrings(q, cfg.sheet2).catch(() => null),
+      buscarNaPlanilhaLiderPro(q, cfg.sheetLider).catch(() => null),
+      buscarNaPlanilhaEspecializacao(q, cfg.sheetEspec).catch(() => null),
+    ]);
+    // Tenta por nome se email não encontrou
+    if (!sparring) sparring = await buscarNaPlanilhaSparrings(qNome, cfg.sheet2).catch(() => null);
+    if (!liderPro) liderPro = await buscarNaPlanilhaLiderPro(qNome, cfg.sheetLider).catch(() => null);
+    if (!especializacao) especializacao = await buscarNaPlanilhaEspecializacao(qNome, cfg.sheetEspec).catch(() => null);
+  } catch(e) { console.log('Erro extra:', e); }
 
   setStatus(false);
-  render(aluno, sparring, null, cfg.subdomain);
+  render(aluno, sparring, null, cfg.subdomain, liderPro, especializacao);
 }
 
 // ─── BUSCA PRINCIPAL ──────────────────────────────
