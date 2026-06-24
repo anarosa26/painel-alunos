@@ -360,20 +360,7 @@
       <input type="text" id="searchInput" placeholder="Digite o nome ou e-mail do aluno..." />
       <button id="searchBtn" onclick="buscar()">Buscar</button>
     </div>
-    <div class="config-toggle" onclick="toggleConfig()">⚙️ Configurações da API</div>
-    <div class="config-panel" id="configPanel">
-      <label>API Key Memberkit</label>
-      <input type="text" id="cfgApiKey" placeholder="Ex: 3p95g92cKSxs2Zr1KghH5mvs" />
-      <label>Subdomínio Memberkit (ex: vendaspro)</label>
-      <input type="text" id="cfgSubdomain" placeholder="Ex: metodo-def" />
-      <label>ID Planilha de Alunos (Google Sheets)</label>
-      <input type="text" id="cfgSheet1" placeholder="19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k" />
-      <label>ID Planilha de Sparrings</label>
-      <input type="text" id="cfgSheet2" placeholder="1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ" />
-      <label>Chave API Google (opcional — para planilhas privadas)</label>
-      <input type="text" id="cfgGoogleKey" placeholder="Deixe em branco se a planilha for pública" />
-      <button class="save-btn" onclick="salvarConfig()">💾 Salvar configurações</button>
-    </div>
+
   </div>
 
   <div id="error-box"></div>
@@ -498,13 +485,8 @@ async function buscarNaPlanilhaAlunos(query, sheetId) {
   const rows = parseCSV(text);
   if (rows.length < 2) return [];
 
-  const header = rows[0];
-  const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
-  const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
-  const telIdx = header.findIndex(h => normalize(h).includes('telefone'));
-  const dataIdx = header.findIndex(h => normalize(h) === 'data');
-  const expIdx = header.findIndex(h => normalize(h).includes('expira'));
-  const statusIdx = header.findIndex(h => normalize(h).includes('status'));
+  // Estrutura: ID(0) | ,(1) | Mês(2) | Data(3) | Período(4) | Expiração(5) | Nome(6) | Email(7) | Telefone(8)
+  const nomeIdx = 6, emailIdx = 7, telIdx = 8, dataIdx = 3, expIdx = 5;
 
   const q = normalize(query);
   const resultados = [];
@@ -518,7 +500,7 @@ async function buscarNaPlanilhaAlunos(query, sheetId) {
         telefone: row[telIdx] || '',
         dataInicio: row[dataIdx] || '',
         expiracao: row[expIdx] || '',
-        status: row[statusIdx] || '',
+        status: row[18] || '',
       });
     }
   }
@@ -552,28 +534,59 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
 }
 
 // ─── LÍDER PRO ────────────────────────────────────
-// Estrutura: CONTENT_ID(0) | Data Cadastro(1) | Ano(2) | Mês(3) | Data Venda(4) | Nome(5) | Email(6) | Telefone(7) | ... sem coluna de expiração
+// Aba Suporte (gid 1895108430) tem duas tabelas:
+// Tabela 1 (vendas): col0=ID, col1=DataCadastro, col2=Ano, col3=Mês, col4=DataVenda, col5=Nome, col6=Email, col7=Telefone
+// Tabela 2 (controle): col0=DataCompra, col1=Expiração, col2=Nome, col3=Email, col5=Telefone
 async function buscarNaPlanilhaLiderPro(query, sheetId) {
   const text = await fetchSheetCSV(sheetId, '1895108430');
   const rows = parseCSV(text);
   if (rows.length < 2) return null;
 
   const q = normalize(query);
-  for (const row of rows.slice(1)) {
-    const nome = row[5] || '';
-    const email = row[6] || '';
-    if (!nome && !email) continue;
-    if (normalize(email) === q || normalize(email).includes(q) || normalize(nome).includes(q)) {
-      return {
-        formacao: 'Líder Pro',
-        nome: nome,
-        email: email,
-        telefone: row[7] || '',
-        dataInicio: row[4] || '',
-        expiracao: '', // Líder Pro não tem coluna de expiração
-      };
+  let resultadoVendas = null;
+  let resultadoControle = null;
+
+  for (const row of rows) {
+    if (row.length < 3) continue;
+
+    // Tabela de controle: col1=Expiração, col2=Nome, col3=Email, col5=Tel
+    const nomeCtrl = row[2] || '';
+    const emailCtrl = row[3] || '';
+    if (nomeCtrl && emailCtrl && emailCtrl.includes('@')) {
+      if (normalize(emailCtrl) === q || normalize(emailCtrl).includes(q) || normalize(nomeCtrl).includes(q)) {
+        resultadoControle = {
+          formacao: 'Líder Pro',
+          nome: nomeCtrl,
+          email: emailCtrl,
+          telefone: row[5] || '',
+          dataInicio: row[0] || '',
+          expiracao: row[1] || '',
+        };
+      }
+    }
+
+    // Tabela de vendas: col5=Nome, col6=Email, col7=Tel, col4=DataVenda
+    const nomeVnd = row[5] || '';
+    const emailVnd = row[6] || '';
+    if (nomeVnd && emailVnd && emailVnd.includes('@')) {
+      if (normalize(emailVnd) === q || normalize(emailVnd).includes(q) || normalize(nomeVnd).includes(q)) {
+        if (!resultadoVendas) {
+          resultadoVendas = {
+            formacao: 'Líder Pro',
+            nome: nomeVnd,
+            email: emailVnd,
+            telefone: row[7] || '',
+            dataInicio: row[4] || '',
+            expiracao: '',
+          };
+        }
+      }
     }
   }
+
+  // Prioriza controle (tem expiração), senão usa vendas
+  if (resultadoControle) return resultadoControle;
+  if (resultadoVendas) return resultadoVendas;
   return null;
 }
 
@@ -719,15 +732,24 @@ function perfilParaHTML(aluno, sparring, subdomain, formacoes) {
   const spTotal = spOuvinte + spLead + spVendedor;
 
   // Formações: usa o array se disponível, senão monta básico
+  const nomeCompletoF = (n) => {
+    if (!n) return n;
+    const nl = (n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (nl.includes('closer pro')) return 'Formação Closer Pro';
+    if (nl.includes('lider pro') || nl.includes('líder pro')) return 'Formação Líder Pro';
+    if (nl.includes('especializa') || nl.includes('high ticket') || nl.includes('higt')) return 'Especialização High Ticket';
+    return n;
+  };
+
   const fList = formacoes?.length
     ? formacoes
     : [{ nome: sparring?.formacao || 'Closer Pro', inicio: aluno?.dataInicio || '', exp: aluno?.expiracao || sparring?.expiracao || '' }];
 
-  const formacaoLabel = fList.map(f => f.nome).join(' + ');
+  const formacaoLabel = fList.map(f => nomeCompletoF(f.nome)).join(' + ');
 
   const formacoesRows = fList.map(f => `
     <tr>
-      <td style="padding:4px 8px 4px 0;color:#7a7090;">${f.nome}</td>
+      <td style="padding:4px 8px 4px 0;color:#7a7090;">${nomeCompletoF(f.nome)}</td>
       <td style="padding:4px 0;font-weight:500;">${f.inicio || '—'}</td>
       <td style="padding:4px 8px 4px 16px;color:#7a7090;">Expiração</td>
       <td style="padding:4px 0;font-weight:500;color:${f.exp ? '#2e7d32' : '#7a7090'};">${f.exp || '—'}</td>
@@ -876,10 +898,20 @@ function render(aluno, sparring, mk, subdomain, liderPro, especializacao) {
     ? `<a href="https://wa.me/${telNumeros.startsWith('55') ? telNumeros : '55'+telNumeros}" target="_blank" style="color:var(--purple);text-decoration:none;font-weight:500;">📱 ${tel}</a>`
     : '—';
 
+  // Nomes completos das formações
+  const nomeCompleto = (n) => {
+    if (!n) return n;
+    const nl = normalize(n);
+    if (nl.includes('closer pro') || nl === 'closer pro') return 'Formação Closer Pro';
+    if (nl.includes('lider pro') || nl.includes('líder pro')) return 'Formação Líder Pro';
+    if (nl.includes('especializa') || nl.includes('high ticket') || nl.includes('higt')) return 'Especialização High Ticket';
+    return n;
+  };
+
   const formacoesHtml = formacoes.length
     ? formacoes.map(f => `
         <div class="course-item">
-          <span class="course-name">${f.nome}</span>
+          <span class="course-name">${nomeCompleto(f.nome)}</span>
           <span style="font-size:11px;color:var(--muted);">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
         </div>`).join('')
     : `<p style="color:var(--muted);font-size:13px;">Não encontrado nas planilhas de formação.</p>`;
@@ -892,7 +924,6 @@ function render(aluno, sparring, mk, subdomain, liderPro, especializacao) {
       <div class="profile-info">
         <h2>${nome}</h2>
         <p>${email}</p>
-        ${formacoes.map(f => `<span class="badge">${f.nome}</span>`).join(' ')}
       </div>
     </div>
     <div class="body-card">
@@ -1070,30 +1101,4 @@ async function buscar() {
     document.getElementById('result').innerHTML = `
       <div class="not-found">
         <div style="font-size:40px">🔍</div>
-        <h3 style="margin-top:12px">Aluno não encontrado</h3>
-        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
-        <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
-      </div>`;
-    document.getElementById('result').style.display = 'block';
-    return;
-  }
-
-  // Se só um resultado, vai direto
-  if (alunos.length === 1) {
-    _alunosEncontrados = alunos;
-    await selecionarAluno(0);
-    return;
-  }
-
-  // Múltiplos — mostra lista
-  _alunosEncontrados = alunos;
-  mostrarLista(alunos);
-}
-
-// Enter para buscar
-document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') buscar();
-});
-</script>
-</body>
-</html>
+        <h3 style="margin-top:12px">Aluno não en
