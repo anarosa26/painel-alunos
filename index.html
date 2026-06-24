@@ -1101,4 +1101,30 @@ async function buscar() {
     document.getElementById('result').innerHTML = `
       <div class="not-found">
         <div style="font-size:40px">🔍</div>
-        <h3 style="margin-top:12px">Aluno não en
+        <h3 style="margin-top:12px">Aluno não encontrado</h3>
+        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
+        <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
+      </div>`;
+    document.getElementById('result').style.display = 'block';
+    return;
+  }
+
+  // Se só um resultado, vai direto
+  if (alunos.length === 1) {
+    _alunosEncontrados = alunos;
+    await selecionarAluno(0);
+    return;
+  }
+
+  // Múltiplos — mostra lista
+  _alunosEncontrados = alunos;
+  mostrarLista(alunos);
+}
+
+// Enter para buscar
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') buscar();
+});
+</script>
+</body>
+</html>
