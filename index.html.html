@@ -360,20 +360,7 @@
       <input type="text" id="searchInput" placeholder="Digite o nome ou e-mail do aluno..." />
       <button id="searchBtn" onclick="buscar()">Buscar</button>
     </div>
-    <div class="config-toggle" onclick="toggleConfig()">⚙️ Configurações da API</div>
-    <div class="config-panel" id="configPanel">
-      <label>API Key Memberkit</label>
-      <input type="text" id="cfgApiKey" placeholder="Ex: 3p95g92cKSxs2Zr1KghH5mvs" />
-      <label>Subdomínio Memberkit (ex: vendaspro)</label>
-      <input type="text" id="cfgSubdomain" placeholder="Ex: metodo-def" />
-      <label>ID Planilha de Alunos (Google Sheets)</label>
-      <input type="text" id="cfgSheet1" placeholder="19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k" />
-      <label>ID Planilha de Sparrings</label>
-      <input type="text" id="cfgSheet2" placeholder="1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ" />
-      <label>Chave API Google (opcional — para planilhas privadas)</label>
-      <input type="text" id="cfgGoogleKey" placeholder="Deixe em branco se a planilha for pública" />
-      <button class="save-btn" onclick="salvarConfig()">💾 Salvar configurações</button>
-    </div>
+
   </div>
 
   <div id="error-box"></div>
@@ -384,13 +371,31 @@
 
 <script>
 // ─── CONFIG ───────────────────────────────────────
+const PROXY_URL = 'https://script.google.com/macros/s/AKfycbyOp0nzE-tirltgar7LtfofMYXAMJM7aO15o1klLQyYOEeR0P3OsfQM-zWi5ha2SBlS7w/exec';
+
 const DEFAULTS = {
   apiKey: '3p95g92cKSxs2Zr1KghH5mvs',
   subdomain: 'metodo-def',
   sheet1: '19xTBLUIsEh_9AVJSe-STJlZEXS3V91HkyRzuR_NCb0k',
   sheet2: '1_smc3Z5R1eLQm3imeNshZg7trjUNBz6uPu49c8yd4OQ',
+  sheetLider: '1a5QsiwMR6aUkYgL_dqGOAG9F0hj3TpIgYJIUTzdXrtA',
+  sheetEspec: '1icemfzsW5ukuJWuHc42mX8Dbehj9NOKgKMh7o0pmivo',
   googleKey: ''
 };
+
+async function buscarNaMemberkit(email) {
+  if (!email) return null;
+  try {
+    const url = PROXY_URL + '?action=getUser&email=' + encodeURIComponent(email);
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!data.found) return null;
+    return data;
+  } catch(e) {
+    console.log('Memberkit proxy erro:', e);
+    return null;
+  }
+}
 
 function getConfig() {
   return {
@@ -398,6 +403,8 @@ function getConfig() {
     subdomain: localStorage.getItem('vp_subdomain') || DEFAULTS.subdomain,
     sheet1: localStorage.getItem('vp_sheet1') || DEFAULTS.sheet1,
     sheet2: localStorage.getItem('vp_sheet2') || DEFAULTS.sheet2,
+    sheetLider: localStorage.getItem('vp_sheetLider') || DEFAULTS.sheetLider,
+    sheetEspec: localStorage.getItem('vp_sheetEspec') || DEFAULTS.sheetEspec,
     googleKey: localStorage.getItem('vp_googleKey') || DEFAULTS.googleKey,
   };
 }
@@ -494,29 +501,58 @@ async function buscarNaPlanilhaAlunos(query, sheetId) {
   const rows = parseCSV(text);
   if (rows.length < 2) return [];
 
+  // Closer Pro aba Compradores — busca coluna Status pelo nome no cabeçalho
   const header = rows[0];
-  const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
-  const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
-  const telIdx = header.findIndex(h => normalize(h).includes('telefone'));
-  const dataIdx = header.findIndex(h => normalize(h) === 'data');
-  const expIdx = header.findIndex(h => normalize(h).includes('expira'));
+  const nomeIdx = 6, emailIdx = 7, telIdx = 8, dataIdx = 3, expIdx = 5;
+  const statusIdx = header.findIndex(h => normalize(h.trim()) === 'status');
 
   const q = normalize(query);
+  const isEmail = query.includes('@');
   const resultados = [];
+
   for (const row of rows.slice(1)) {
     const nome = row[nomeIdx] || '';
     const email = row[emailIdx] || '';
     if (!nome && !email) continue;
-    if (normalize(nome).includes(q) || normalize(email).includes(q)) {
+
+    const nomeN = normalize(nome);
+    const emailN = normalize(email);
+
+    let match = false;
+    if (isEmail) {
+      // Busca por email: exige correspondência exata do email
+      match = emailN === q;
+    } else {
+      // Busca por nome: exige que TODAS as palavras da query apareçam no nome
+      const palavras = q.split(/\s+/).filter(Boolean);
+      match = palavras.every(p => nomeN.includes(p));
+    }
+
+    if (match) {
       resultados.push({
         nome, email,
         telefone: row[telIdx] || '',
         dataInicio: row[dataIdx] || '',
         expiracao: row[expIdx] || '',
+        status: (statusIdx >= 0 ? row[statusIdx] || '' : '').trim(),
+        fonte: 'closerpro',
       });
     }
   }
   return resultados;
+}
+
+// Verifica se query bate com nome ou email
+function matchQuery(query, nome, email) {
+  const q = normalize((query || '').trim());
+  if (!q) return false;
+  // Busca por email: exige match exato
+  if (q.includes('@')) return normalize((email || '').trim()) === q;
+  // Busca por nome: TODAS as palavras da query devem aparecer no nome
+  const nomeN = normalize(nome || '');
+  const palavras = q.split(' ').filter(p => p.length >= 2);
+  if (!palavras.length) return nomeN.includes(q);
+  return palavras.every(p => nomeN.includes(p));
 }
 
 async function buscarNaPlanilhaSparrings(query, sheetId) {
@@ -524,29 +560,122 @@ async function buscarNaPlanilhaSparrings(query, sheetId) {
   const rows = parseCSV(text);
   if (rows.length < 2) return null;
 
-  const header = rows[0];
-  const nomeIdx = header.findIndex(h => normalize(h).includes('nome'));
-  const emailIdx = header.findIndex(h => normalize(h).includes('mail'));
-  const oIdx = 3, lIdx = 4, vIdx = 5;
-  const expIdx = header.findIndex(h => normalize(h).includes('expira'));
+  const nomeIdx = 1, emailIdx = 2, oIdx = 3, lIdx = 4, vIdx = 5, expIdx = 6, formacaoIdx = 9;
 
-  const q = normalize(query);
+  // Suporta múltiplos emails separados por vírgula
+  const queries = query.split(',').map(q => q.trim()).filter(Boolean);
+
+  let totalOuvinte = 0, totalLead = 0, totalVendedor = 0;
+  let expiracao = '', formacao = '';
+  let encontrou = false;
+
   for (const row of rows.slice(1)) {
     const nome = row[nomeIdx] || '';
     const email = row[emailIdx] || '';
-    if (normalize(nome).includes(q) || normalize(email).includes(q)) {
+    if (!nome && !email) continue;
+
+    const bate = queries.some(q => matchQuery(q, nome, email));
+    if (bate) {
+      totalOuvinte += parseInt(row[oIdx]) || 0;
+      totalLead += parseInt(row[lIdx]) || 0;
+      totalVendedor += parseInt(row[vIdx]) || 0;
+      if (!expiracao) expiracao = row[expIdx] || '';
+      if (!formacao) formacao = row[formacaoIdx] || '';
+      encontrou = true;
+    }
+  }
+
+  if (!encontrou) return null;
+  return { ouvinte: totalOuvinte, lead: totalLead, vendedor: totalVendedor, expiracao, formacao };
+}
+
+// ─── LÍDER PRO ────────────────────────────────────
+// Aba Suporte — duas tabelas. Tabela controle tem coluna "Status" — busca pelo nome.
+async function buscarNaPlanilhaLiderPro(query, sheetId) {
+  const text = await fetchSheetCSV(sheetId, '1895108430');
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+
+  const q = normalize(query);
+
+  // Encontra índice de Status varrendo cabeçalhos — fallback col 7
+  let ctrlStatusIdx = 7;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const idx = rows[i].findIndex(h => normalize((h||'').trim()) === 'status');
+    if (idx >= 0) { ctrlStatusIdx = idx; break; }
+  }
+
+  let resultadoControle = null;
+  let resultadoVendas = null;
+
+  for (const row of rows) {
+    if (row.length < 3) continue;
+
+    // Tabela controle: Email=col3, Nome=col2
+    const emailCtrl = row[3] || '';
+    const nomeCtrl = row[2] || '';
+    if (emailCtrl && emailCtrl.includes('@')) {
+      if (matchQuery(query, nomeCtrl, emailCtrl)) {
+        resultadoControle = {
+          formacao: 'Líder Pro',
+          nome: nomeCtrl,
+          email: emailCtrl,
+          telefone: row[5] || '',
+          dataInicio: row[0] || '',
+          expiracao: row[1] || '',
+          status: (row[ctrlStatusIdx] || '').trim(),
+        };
+      }
+    }
+
+    // Tabela vendas: Email=col6, Nome=col5
+    const emailVnd = row[6] || '';
+    const nomeVnd = row[5] || '';
+    if (emailVnd && emailVnd.includes('@') && !resultadoVendas) {
+      if (matchQuery(query, nomeVnd, emailVnd)) {
+        resultadoVendas = {
+          formacao: 'Líder Pro',
+          nome: nomeVnd,
+          email: emailVnd,
+          telefone: row[7] || '',
+          dataInicio: row[4] || '',
+          expiracao: '',
+          status: '',
+        };
+      }
+    }
+  }
+
+  if (resultadoControle) return resultadoControle;
+  if (resultadoVendas) return resultadoVendas;
+  return null;
+}
+
+// ─── ESPECIALIZAÇÃO CLOSER HIGH TICKET ────────────
+// Estrutura: CONTENT_ID(0)|DataCadastro(1)|Ano(2)|Mês(3)|DataVenda(4)|Período(5)|Expiração(6)|Nome(7)|Email(8)|Telefone(9)|Status(10)
+async function buscarNaPlanilhaEspecializacao(query, sheetId) {
+  const text = await fetchSheetCSV(sheetId, '0');
+  const rows = parseCSV(text);
+  if (rows.length < 2) return null;
+
+  const q = normalize(query);
+  for (const row of rows.slice(1)) {
+    const nome = row[7] || '';
+    const email = row[8] || '';
+    if (!nome && !email) continue;
+    if (normalize(email) === q || normalize(email).includes(q) || normalize(nome).includes(q)) {
       return {
-        ouvinte: parseInt(row[oIdx]) || 0,
-        lead: parseInt(row[lIdx]) || 0,
-        vendedor: parseInt(row[vIdx]) || 0,
-        expiracao: row[expIdx] || '',
+        formacao: 'Especialização Closer HT',
+        nome, email,
+        telefone: row[9] || '',
+        dataInicio: row[4] || '',
+        expiracao: row[6] || '',
+        status: (row[10] || '').trim(),
       };
     }
   }
   return null;
 }
-
-// ─── MEMBERKIT ────────────────────────────────────
 async function buscarMemberkit(query, apiKey, subdomain) {
   // Busca por email ou nome
   const base = `https://${subdomain}.memberkit.com.br/api/v1`;
@@ -651,69 +780,275 @@ function comparaExpiracao(dataSheet, dataMk) {
   }
 }
 
-function render(aluno, sparring, mk, subdomain) {
-  const nome = aluno?.nome || mk?.user?.name || mk?.user?.full_name || 'Aluno não encontrado';
-  const email = aluno?.email || mk?.user?.email || '';
-  const tel = aluno?.telefone || '';
-  const dataInicio = aluno?.dataInicio || '';
-  const expSheet = aluno?.expiracao || sparring?.expiracao || '';
-  const expMk = mk?.user?.expires_at ? new Date(mk.user.expires_at).toLocaleDateString('pt-BR') : '';
-  const foto = mk?.user?.avatar_url || mk?.user?.photo_url || '';
-  const turmas = mk?.turmas || [];
-  const atividades = mk?.atividades || [];
+// ─── SELEÇÃO PARA PDF ─────────────────────────────
+let _perfisParaPDF = [];
 
-  const expInfo = expiracaoLabel(expSheet || expMk);
-  const divComp = comparaExpiracao(expSheet, expMk);
+function perfilParaHTML(aluno, sparring, subdomain, formacoes, mk, progressoManual) {
+  const nome = aluno?.nome || '—';
+  const email = aluno?.email || '—';
+  const tel = aluno?.telefone || '';
+  const spOuvinte = sparring?.ouvinte ?? 0;
+  const spLead = sparring?.lead ?? 0;
+  const spVendedor = sparring?.vendedor ?? 0;
+  const spTotal = spOuvinte + spLead + spVendedor;
+
+  const nomeCompletoF = (n) => {
+    if (!n) return n;
+    const nl = (n||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (nl.includes('closer pro')) return 'Formação Closer Pro';
+    if (nl.includes('lider pro') || nl.includes('líder pro')) return 'Formação Líder Pro';
+    if (nl.includes('especializa') || nl.includes('high ticket') || nl.includes('higt')) return 'Especialização High Ticket';
+    return n;
+  };
+
+  const fList = formacoes?.length
+    ? formacoes
+    : [{ nome: sparring?.formacao || 'Closer Pro', inicio: aluno?.dataInicio || '', exp: aluno?.expiracao || sparring?.expiracao || '' }];
+
+  const formacaoLabel = fList.map(f => nomeCompletoF(f.nome)).join(' + ');
+
+  const formacoesRows = fList.map(f => `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:8px 12px;background:#f5eef8;border-radius:8px;border-left:3px solid #7B2D8B;">
+      <span style="font-size:12px;font-weight:700;color:#7B2D8B;">${nomeCompletoF(f.nome)}</span>
+      <span style="font-size:11px;color:#7a7090;">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
+    </div>`).join('');
+
+  // Progresso da Memberkit
+  const progressosHTML = (() => {
+    // Prioriza progresso manual se disponível
+    const lista = progressoManual && progressoManual.length ? progressoManual.map(function(p) {
+      return { course_name: p.course_name, progress: p.progress, tipo: 'manual' };
+    }) : (mk && mk.progressos && mk.progressos.length ? (() => {
+      const maxAulas = Math.max.apply(null, mk.progressos.map(function(p) { return p.aulas_concluidas || 0; }).concat([1]));
+      return mk.progressos.map(function(p) {
+        return { course_name: p.course_name, progress: Math.round(((p.aulas_concluidas||0)/maxAulas)*100), tipo: 'auto' };
+      });
+    })() : []);
+
+    if (!lista.length) return '';
+
+    return '<div class="divider"></div><div class="section-label">Progresso na Plataforma' + (lista[0].tipo === 'manual' ? '' : ' (estimado)') + '</div>' +
+      lista.map(function(p) {
+        var pct = p.progress || 0;
+        var cor = pct === 100 ? '#2e7d32' : pct >= 50 ? '#7B2D8B' : '#e65100';
+        var bg = pct === 100 ? '#c8e6c9' : pct >= 50 ? '#f5eef8' : '#ffe0cc';
+        return '<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="font-size:11px;color:#1a1a2e;">' + p.course_name + '</span><span style="font-size:11px;font-weight:700;color:' + cor + ';">' + pct + '%</span></div><div style="background:' + bg + ';border-radius:999px;height:6px;overflow:hidden;"><div style="width:' + pct + '%;background:' + cor + ';height:100%;border-radius:999px;"></div></div></div>';
+      }).join('');
+  })();
+
+  const fotoUrlPDF = mk?.profile_image_url || '';
+  const avatarPDF = fotoUrlPDF
+    ? `<div class="avatar-circle" style="overflow:hidden;padding:0;"><img src="${fotoUrlPDF}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML='${(nome||'?').split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase()}'"></div>`
+    : `<div class="avatar-circle">${(nome||'?').split(' ').slice(0,2).map(p=>p[0]).join('').toUpperCase()}</div>`;
+
+  return `
+    <div class="card">
+      <div class="card-header">
+        ${avatarPDF}
+        <div class="header-info">
+          <h2>${nome}</h2>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="section-label">Dados Cadastrais</div>
+        <div class="data-grid">
+          <div class="data-item"><span class="lbl">E-mail</span><span class="val">${email}</span></div>
+          <div class="data-item"><span class="lbl">Telefone</span><span class="val">${tel || '—'}</span></div>
+        </div>
+        <div class="divider"></div>
+        <div class="section-label">Formações e Datas de Acesso</div>
+        ${formacoesRows}
+        <div class="divider"></div>
+        <div class="section-label">Participação em Sparrings</div>
+        <div class="sparring-row">
+          <div class="sp-card"><div class="sp-num">${spOuvinte}</div><div class="sp-lbl">Ouvinte</div></div>
+          <div class="sp-card"><div class="sp-num">${spLead}</div><div class="sp-lbl">Lead</div></div>
+          <div class="sp-card"><div class="sp-num">${spVendedor}</div><div class="sp-lbl">Vendedor</div></div>
+          <div class="sp-card sp-total"><div class="sp-num">${spTotal}</div><div class="sp-lbl">Total</div></div>
+        </div>
+        ${progressosHTML}
+      </div>
+    </div>`;
+}
+
+function exportarPDF() {
+  if (!_perfisParaPDF.length) { alert('Nenhum perfil selecionado para exportar.'); return; }
+  const cfg = getConfig();
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Relatório de Alunos</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { margin: 14mm; size: A4; }
+  @media print {
+    html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { margin: 14mm; size: A4; }
+    @page :first { margin-top: 14mm; }
+    /* Suprime cabeçalho e rodapé nativos do navegador */
+    head, header, footer { display: none !important; }
+    a[href]::after { content: none !important; }
+  }
+  body { font-family: 'Inter', Arial, sans-serif; background: #f8f7fa; color: #1a1a2e; }
+  .page { max-width: 760px; margin: 0 auto; padding: 24px 20px; }
+
+  /* CAPA */
+  .cover { background: #7B2D8B; color: white; border-radius: 16px; padding: 32px 36px; margin-bottom: 28px; display: flex; align-items: center; justify-content: space-between; }
+  .cover-left h1 { font-size: 22px; font-weight: 700; }
+  .cover-left p { font-size: 13px; opacity: 0.8; margin-top: 6px; }
+  .cover-right { text-align: right; font-size: 12px; opacity: 0.75; }
+  .cover-badge { display: inline-block; background: rgba(255,255,255,0.2); border-radius: 20px; padding: 4px 14px; font-size: 12px; font-weight: 600; margin-top: 8px; }
+
+  /* CARD */
+  .card { background: white; border-radius: 14px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.07); break-inside: avoid; page-break-inside: avoid; }
+  .card-header { background: #7B2D8B; color: white; padding: 18px 22px; display: flex; align-items: center; gap: 16px; }
+  .avatar-circle { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,0.25); border: 2px solid rgba(255,255,255,0.4); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+  .header-info h2 { font-size: 16px; font-weight: 700; }
+  .header-info p { font-size: 12px; opacity: 0.85; margin-top: 3px; }
+  .badge { display: inline-block; background: rgba(255,255,255,0.2); border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 600; margin-top: 5px; }
+  .card-body { padding: 18px 22px; }
+  .section-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #7a7090; margin-bottom: 10px; }
+  .data-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin-bottom: 4px; }
+  .data-item { display: flex; flex-direction: column; }
+  .lbl { font-size: 10px; color: #7a7090; margin-bottom: 2px; }
+  .val { font-size: 13px; font-weight: 500; }
+  .exp { color: #2e7d32; }
+  .divider { height: 1px; background: #e8e0ed; margin: 14px 0; }
+  .sparring-row { display: flex; gap: 10px; }
+  .sp-card { flex: 1; background: #f5eef8; border-radius: 10px; padding: 12px 8px; text-align: center; }
+  .sp-total { background: #f5eef8; }
+  .sp-num { font-size: 24px; font-weight: 700; color: #7B2D8B; }
+  .sp-total .sp-num { color: #7B2D8B; }
+  .sp-lbl { font-size: 10px; color: #7a7090; margin-top: 2px; }
+  .sp-total .sp-lbl { color: #7a7090; }
+  .footer { text-align: center; font-size: 10px; color: #aaa; margin-top: 16px; padding-top: 12px; border-top: 1px solid #e8e0ed; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="cover">
+    <div class="cover-left">
+      <h1>Relatório de Alunos</h1>
+      <p>Vendas Pro · Formação Closer Pro / Líder Pro</p>
+      <span class="cover-badge">${_perfisParaPDF.length} aluno(s) selecionado(s)</span>
+    </div>
+    <div class="cover-right">
+      <div>Gerado em</div>
+      <div style="font-weight:600;font-size:13px;">${new Date().toLocaleDateString('pt-BR')}</div>
+    </div>
+  </div>
+  ${_perfisParaPDF.map(p => perfilParaHTML(p.aluno, p.sparring, cfg.subdomain, p.formacoes, p.mk, p.progressoManual)).join('')}
+  <div class="footer">Vendas Pro · Comercial Pro · ${new Date().getFullYear()}</div>
+</div>
+<script>
+window.onload = () => {
+  document.title = '';
+  setTimeout(() => window.print(), 600);
+}<\/script>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
+}
+
+function render(aluno, sparring, mk, subdomain, liderPro, especializacao) {
+  const nome = aluno?.nome || '—';
+  const email = aluno?.email || mk?.user?.email || '';
+  const tel = aluno?.telefone || liderPro?.telefone || especializacao?.telefone || '';
+
+  // Monta lista de formações — apenas as planilhas onde o aluno foi ENCONTRADO
+  const formacoes = [];
+  // Closer Pro: só adiciona se o aluno veio diretamente da planilha Closer Pro (fonte = 'closerpro')
+  if (aluno?.fonte === 'closerpro') {
+    formacoes.push({ nome: 'Closer Pro', inicio: aluno?.dataInicio || '', exp: aluno?.expiracao || '' });
+  }
+  // Líder Pro: só adiciona se foi encontrado na planilha Líder Pro
+  if (liderPro) formacoes.push({ nome: 'Líder Pro', inicio: liderPro.dataInicio || '', exp: liderPro.expiracao || '' });
+  // Especialização: só adiciona se foi encontrado na planilha Especialização
+  if (especializacao) formacoes.push({ nome: 'Especialização Closer HT', inicio: especializacao.dataInicio || '', exp: especializacao.expiracao || '' });
 
   const spOuvinte = sparring?.ouvinte ?? '—';
   const spLead = sparring?.lead ?? '—';
   const spVendedor = sparring?.vendedor ?? '—';
+  const spTotal = (sparring?.ouvinte||0)+(sparring?.lead||0)+(sparring?.vendedor||0);
 
-  const avatarHtml = foto
-    ? `<img src="${foto}" alt="${nome}" onerror="this.style.display='none';this.parentElement.textContent='${iniciais(nome)}'">`
+  // Status de acesso — mostra exatamente o que está na planilha
+  const statusPlanilha = aluno?.status || liderPro?.status || especializacao?.status || '';
+  const statusLower = normalize(statusPlanilha);
+  const isReembolso = statusLower.includes('reembolso') || statusLower.includes('reembolsado');
+  const isAtivo = statusLower === 'ativo';
+
+  let alertaHTML = '';
+  if (statusPlanilha) {
+    const cor = isReembolso ? '#c62828' : isAtivo ? '#2e7d32' : '#f57f17';
+    const bg = isReembolso ? '#ffeaea' : isAtivo ? '#e8f5e9' : '#fff8e1';
+    const borda = isReembolso ? '#e53935' : isAtivo ? '#43a047' : '#f9a825';
+    const icone = isReembolso ? '🚫' : isAtivo ? '✅' : '⚠️';
+    alertaHTML = `<div style="background:${bg};border:1px solid ${borda};border-radius:10px;padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:16px;">${icone}</span>
+      <span style="font-size:13px;font-weight:700;color:${cor};">Status: ${statusPlanilha}</span>
+    </div>`;
+  }
+  const fotoUrl = mk?.profile_image_url || '';
+  const avatarHtml = fotoUrl
+    ? `<img src="${fotoUrl}" alt="${nome}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;" onerror="this.parentElement.innerHTML='${iniciais(nome)}'">`
     : iniciais(nome);
-
-  // Link direto Memberkit
   const mkEmail = encodeURIComponent(email);
-  const mkLink = email ? `https://${subdomain}.memberkit.com.br/admin/users?q=${mkEmail}` : `https://${subdomain}.memberkit.com.br/admin/users`;
+  const mkLink = mk && mk.mk_id
+    ? 'https://metodo-def.memberkit.com.br/profiles/' + mk.mk_id
+    : 'https://metodo-def.memberkit.com.br';
 
-  // Expiração com cor
-  const expLabel = expSheet
-    ? (() => { const ei = expiracaoLabel(expSheet); return `<span style="color:var(--${ei.cls === 'ok' ? 'green' : ei.cls === 'warn' ? 'amber' : ei.cls === 'error' ? 'red' : 'muted'})">${expSheet}</span>`; })()
-    : '<span style="color:var(--muted)">—</span>';
+  const telNumeros = tel.replace(/\D/g, '');
+  const telHtml = telNumeros
+    ? `<a href="https://wa.me/${telNumeros.startsWith('55') ? telNumeros : '55'+telNumeros}" target="_blank" style="color:var(--purple);text-decoration:none;font-weight:500;">📱 ${tel}</a>`
+    : '—';
 
-  const turmasHtml = turmas.length
-    ? turmas.map(t => {
-        const ativo = t.status === 'active' || !t.status;
-        return `<div class="course-item">
-          <span class="course-name">${t.name || t.course_name || 'Formação'}</span>
-          <span class="course-status ${ativo ? 'status-active' : 'status-inactive'}">${ativo ? 'Ativo' : 'Inativo'}</span>
-        </div>`;
-      }).join('')
-    : '';
+  // Nomes completos das formações
+  const nomeCompleto = (n) => {
+    if (!n) return n;
+    const nl = normalize(n);
+    if (nl.includes('closer pro') || nl === 'closer pro') return 'Formação Closer Pro';
+    if (nl.includes('lider pro') || nl.includes('líder pro')) return 'Formação Líder Pro';
+    if (nl.includes('especializa') || nl.includes('high ticket') || nl.includes('higt')) return 'Especialização High Ticket';
+    return n;
+  };
+
+  const formacoesHtml = formacoes.length
+    ? formacoes.map(f => `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;padding:10px 14px;background:var(--purple-faint);border-radius:10px;border-left:3px solid var(--purple);">
+          <span style="font-size:13px;font-weight:700;color:var(--purple);">${nomeCompleto(f.nome)}</span>
+          <span style="font-size:12px;color:var(--muted);">${f.inicio ? 'Início: ' + f.inicio : ''} ${f.exp ? '· Exp: ' + f.exp : ''}</span>
+        </div>`).join('')
+    : `<p style="color:var(--muted);font-size:13px;">Não encontrado nas planilhas de formação.</p>`;
+
+  const jaAdicionado = _perfisParaPDF.some(p => p.aluno?.email === email);
 
   document.getElementById('result').innerHTML = `
     <div class="profile-header">
       <div class="avatar">${avatarHtml}</div>
       <div class="profile-info">
         <h2>${nome}</h2>
-        <p>${email}${tel ? ' · ' + tel : ''}</p>
-        <span class="badge">Acesso até: ${expSheet || '—'}</span>
+        <p>${email}</p>
       </div>
     </div>
     <div class="body-card">
-
+      ${alertaHTML}
       <div class="section">
         <div class="section-title">Dados Cadastrais</div>
         <div class="info-grid">
           <div class="info-item"><label>E-mail</label><span>${email || '—'}</span></div>
-          <div class="info-item"><label>Telefone</label><span>${tel || '—'}</span></div>
-          <div class="info-item"><label>Data de início</label><span>${dataInicio || '—'}</span></div>
-          <div class="info-item"><label>Expiração do acesso</label>${expLabel}</div>
+          <div class="info-item"><label>Telefone</label>${telHtml}</div>
         </div>
       </div>
 
-      ${divComp ? `<div class="section"><div class="section-title">Verificação de Datas</div>${divComp}</div>` : ''}
+      <div class="section">
+        <div class="section-title">Formações e Datas de Acesso</div>
+        <div class="course-list">${formacoesHtml}</div>
+      </div>
 
       <div class="section">
         <div class="section-title">Participação em Sparrings</div>
@@ -721,23 +1056,187 @@ function render(aluno, sparring, mk, subdomain) {
           <div class="sparring-card"><div class="num">${spOuvinte}</div><div class="lbl">Ouvinte</div></div>
           <div class="sparring-card"><div class="num">${spLead}</div><div class="lbl">Lead</div></div>
           <div class="sparring-card"><div class="num">${spVendedor}</div><div class="lbl">Vendedor</div></div>
-          <div class="sparring-card"><div class="num" style="color:var(--purple)">${(sparring?.ouvinte||0)+(sparring?.lead||0)+(sparring?.vendedor||0)}</div><div class="lbl">Total</div></div>
+          <div class="sparring-card"><div class="num" style="color:var(--purple)">${spTotal}</div><div class="lbl">Total</div></div>
         </div>
       </div>
 
       <div class="section">
-        <div class="section-title">Progresso na Memberkit</div>
-        ${turmasHtml ? `<div class="course-list" style="margin-bottom:14px">${turmasHtml}</div>` : ''}
         <a href="${mkLink}" target="_blank" style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;background:var(--purple);color:white;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600;">
-          🔗 Ver progresso completo na Memberkit
+          🔗 Ver perfil completo na Memberkit
         </a>
-        <p style="font-size:11px;color:var(--muted);margin-top:8px;">Abre direto no perfil do aluno na plataforma.</p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Progresso na Plataforma (Memberkit)</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">Digite o progresso no formato <strong>"Módulo: XX%"</strong> — um por linha. Copie direto da tela da Memberkit.</p>
+        <textarea id="progressoManual" placeholder="Exemplo:&#10;Técnicas de vendas: 100%&#10;O Mapa da Liderança: 43%&#10;Sparrings: 100%&#10;Oficina de Carreira: 60%" style="width:100%;height:120px;border:1px solid var(--border);border-radius:8px;padding:10px;font-size:12px;font-family:inherit;resize:vertical;box-sizing:border-box;color:var(--text);background:white;"></textarea>
+        <button onclick="aplicarProgressoManual()" style="margin-top:8px;padding:8px 18px;background:var(--purple);color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">✅ Aplicar progresso</button>
+        <div id="progressoManualStatus" style="margin-top:8px;font-size:12px;display:none;"></div>
+        <div id="progressoManualPreview" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="section" style="background:var(--purple-faint);">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--purple-dark);">Exportar este perfil em PDF</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px;">Adicione à seleção e exporte quando quiser</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button onclick="adicionarAoPDF()" id="btnAdd" style="padding:8px 16px;background:${jaAdicionado ? '#e8f5e9' : 'var(--purple)'};color:${jaAdicionado ? '#2e7d32' : 'white'};border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              ${jaAdicionado ? '✅ Adicionado' : '+ Adicionar à seleção'}
+            </button>
+            <button onclick="verSelecao()" style="padding:8px 16px;background:white;color:var(--purple);border:1px solid var(--purple);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              📋 Ver seleção (<span id="countPDF">${_perfisParaPDF.length}</span>)
+            </button>
+            <button onclick="exportarPDF()" style="padding:8px 16px;background:#1a1a2e;color:white;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">
+              ⬇️ Exportar PDF
+            </button>
+          </div>
+        </div>
       </div>
 
     </div>
   `;
 
+  window._alunoAtual = { aluno, sparring, liderPro, especializacao, formacoes, mk };
   document.getElementById('result').style.display = 'block';
+}
+
+async function lerImagemProgresso(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const status = document.getElementById('progressoManualStatus');
+  status.style.display = 'block';
+  status.textContent = '⏳ Lendo o print com IA...';
+
+  try {
+    // Converte imagem para base64
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const mediaType = file.type || 'image/png';
+
+    // Chama Claude API para extrair progresso
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: { type: 'base64', media_type: mediaType, data: base64 }
+            },
+            {
+              type: 'text',
+              text: 'Esta é uma imagem de uma plataforma de cursos online mostrando o progresso de um aluno. Extraia SOMENTE os nomes dos módulos/cursos e seus percentuais de progresso. Retorne APENAS no formato exato: "Nome do módulo: XX%" — um por linha, sem nenhum texto adicional, sem explicações, sem introdução.'
+            }
+          ]
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const texto = data.content?.[0]?.text || '';
+
+    if (texto) {
+      document.getElementById('progressoManual').value = texto;
+      status.textContent = '✅ Print lido! Clique em "Aplicar progresso" para confirmar.';
+      status.style.color = '#2e7d32';
+    } else {
+      status.textContent = '⚠️ Não consegui extrair o progresso. Tente digitar manualmente.';
+      status.style.color = '#e65100';
+    }
+  } catch(e) {
+    status.textContent = '⚠️ Erro ao ler a imagem. Tente digitar manualmente.';
+    status.style.color = '#e65100';
+  }
+}
+
+function aplicarProgressoManual() {
+  const status = document.getElementById('progressoManualStatus');
+  if (status) { status.style.display = 'none'; }
+  const texto = document.getElementById('progressoManual')?.value || '';
+  if (!texto.trim()) return;
+
+  // Interpreta linhas no formato "Nome do módulo: XX%" ou "Nome do módulo XX%"
+  const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
+  const progressos = [];
+
+  linhas.forEach(function(linha) {
+    const match = linha.match(/^(.+?)[\:\-]?\s*(\d+)\s*%/);
+    if (match) {
+      const nome = match[1].trim().replace(/[\:\-]$/, '').trim();
+      const pct = Math.min(parseInt(match[2]), 100);
+      progressos.push({ course_name: nome, progress: pct });
+    }
+  });
+
+  if (!progressos.length) {
+    document.getElementById('progressoManualPreview').innerHTML = '<p style="color:#e65100;font-size:12px;">Nenhum progresso reconhecido. Use o formato "Módulo: 75%" por linha.</p>';
+    return;
+  }
+
+  // Salva no _alunoAtual
+  if (window._alunoAtual) {
+    window._alunoAtual.progressoManual = progressos;
+  }
+
+  // Atualiza também na lista _perfisParaPDF se o aluno já foi adicionado
+  const email = window._alunoAtual?.aluno?.email || '';
+  if (email) {
+    _perfisParaPDF = _perfisParaPDF.map(function(p) {
+      if (p.aluno?.email === email) {
+        return Object.assign({}, p, { progressoManual: progressos });
+      }
+      return p;
+    });
+  }
+
+  // Mostra preview
+  const preview = progressos.map(function(p) {
+    const cor = p.progress === 100 ? '#2e7d32' : p.progress >= 50 ? '#7B2D8B' : '#e65100';
+    const bg = p.progress === 100 ? '#c8e6c9' : p.progress >= 50 ? '#e8e0ed' : '#ffe0cc';
+    return '<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="font-size:13px;color:#1a1a2e;">' + p.course_name + '</span><span style="font-size:12px;font-weight:700;color:' + cor + ';">' + p.progress + '%</span></div><div style="background:' + bg + ';border-radius:999px;height:8px;overflow:hidden;"><div style="width:' + p.progress + '%;background:' + cor + ';height:100%;border-radius:999px;"></div></div></div>';
+  }).join('');
+
+  document.getElementById('progressoManualPreview').innerHTML =
+    '<div style="font-size:11px;font-weight:600;color:var(--purple);margin-bottom:8px;">✅ ' + progressos.length + ' módulo(s) reconhecido(s):</div>' + preview;
+}
+
+function adicionarAoPDF() {
+  if (!window._alunoAtual) return;
+  const { aluno, sparring, formacoes } = window._alunoAtual;
+  const email = aluno?.email || '';
+  const jaAdicionado = _perfisParaPDF.some(p => p.aluno?.email === email);
+  if (jaAdicionado) {
+    _perfisParaPDF = _perfisParaPDF.filter(p => p.aluno?.email !== email);
+    document.getElementById('btnAdd').textContent = '+ Adicionar à seleção';
+    document.getElementById('btnAdd').style.background = 'var(--purple)';
+    document.getElementById('btnAdd').style.color = 'white';
+  } else {
+    _perfisParaPDF.push({ aluno, sparring, formacoes, mk: window._alunoAtual?.mk || null, progressoManual: window._alunoAtual?.progressoManual || null });
+    document.getElementById('btnAdd').textContent = '✅ Adicionado';
+    document.getElementById('btnAdd').style.background = '#e8f5e9';
+    document.getElementById('btnAdd').style.color = '#2e7d32';
+  }
+  document.getElementById('countPDF').textContent = _perfisParaPDF.length;
+}
+
+function verSelecao() {
+  if (!_perfisParaPDF.length) { alert('Nenhum perfil adicionado ainda.'); return; }
+  const nomes = _perfisParaPDF.map((p,i) => `${i+1}. ${p.aluno?.nome || p.aluno?.email}`).join('\n');
+  if (confirm(`Perfis selecionados (${_perfisParaPDF.length}):\n\n${nomes}\n\nDeseja exportar agora?`)) {
+    exportarPDF();
+  }
 }
 
 // ─── LISTA DE RESULTADOS ──────────────────────────
@@ -767,21 +1266,52 @@ let _alunosEncontrados = [];
 let _sparringCache = null;
 let _cfgCache = null;
 
+let _liderProCache = null;
+let _especializacaoCache = null;
+
 async function selecionarAluno(idx) {
   const aluno = _alunosEncontrados[idx];
   const cfg = _cfgCache;
   setError('');
   document.getElementById('result').style.display = 'none';
-  setStatus(true, 'Buscando sparrings...');
+  setStatus(true, 'Buscando sparrings e formações...');
 
   let sparring = null;
-  try {
-    sparring = await buscarNaPlanilhaSparrings(aluno.email || aluno.nome, cfg.sheet2);
-    if (!sparring) sparring = await buscarNaPlanilhaSparrings(aluno.nome, cfg.sheet2);
-  } catch(e) {}
+  let liderPro = _liderProCache;
+  let especializacao = _especializacaoCache;
 
-  setStatus(false);
-  render(aluno, sparring, null, cfg.subdomain);
+  // Limpa cache após usar
+  _liderProCache = null;
+  _especializacaoCache = null;
+
+  const q = aluno.email || aluno.nome;
+  const qNome = aluno.nome;
+
+  try {
+    // Busca simultânea SEMPRE nas 3 planilhas + sparrings + memberkit
+    const [sparringRes, mkRes, liderProRes, especializacaoRes] = await Promise.all([
+      buscarNaPlanilhaSparrings(aluno.email || q, cfg.sheet2).catch(() => null),
+      buscarNaMemberkit(aluno.email).catch(() => null),
+      buscarNaPlanilhaLiderPro(q, cfg.sheetLider).catch(() => null),
+      buscarNaPlanilhaEspecializacao(q, cfg.sheetEspec).catch(() => null),
+    ]);
+
+    sparring = sparringRes;
+    let mk = mkRes || null;
+    if (!liderPro) liderPro = liderProRes;
+    if (!especializacao) especializacao = especializacaoRes;
+
+    if (!sparring && aluno.email) sparring = await buscarNaPlanilhaSparrings(aluno.email, cfg.sheet2).catch(() => null);
+    if (!liderPro) liderPro = await buscarNaPlanilhaLiderPro(qNome, cfg.sheetLider).catch(() => null);
+    if (!especializacao) especializacao = await buscarNaPlanilhaEspecializacao(qNome, cfg.sheetEspec).catch(() => null);
+
+    setStatus(false);
+    render(aluno, sparring, mk, cfg.subdomain, liderPro, especializacao);
+  } catch(e) {
+    console.log('Erro selecionarAluno:', e);
+    setStatus(false);
+    render(aluno, null, null, cfg.subdomain, liderPro, especializacao);
+  }
 }
 
 // ─── BUSCA PRINCIPAL ──────────────────────────────
@@ -797,41 +1327,56 @@ async function buscar() {
   document.getElementById('result').style.display = 'none';
   setStatus(true, 'Buscando nas planilhas...');
 
-  let alunos = [], sparring = null;
-  const erros = [];
+  let closerPro = [], liderPro = null, especializacao = null;
 
   try {
-    setStatus(true, 'Consultando planilha de alunos...');
-    alunos = await buscarNaPlanilhaAlunos(query, cfg.sheet1);
-  } catch(e) { erros.push('Planilha alunos: ' + e.message); }
+    // Busca simultânea nas 3 planilhas
+    [closerPro, liderPro, especializacao] = await Promise.all([
+      buscarNaPlanilhaAlunos(query, cfg.sheet1).catch(() => []),
+      buscarNaPlanilhaLiderPro(query, cfg.sheetLider).catch(() => null),
+      buscarNaPlanilhaEspecializacao(query, cfg.sheetEspec).catch(() => null),
+    ]);
+  } catch(e) { setError('⚠️ Erro ao buscar: ' + e.message); }
 
   setStatus(false);
   btn.disabled = false;
 
-  if (erros.length) setError('⚠️ ' + erros.join(' | '));
-
-  if (!alunos.length) {
+  // Nenhuma das 3 encontrou
+  const encontrouAlgo = closerPro.length > 0 || liderPro || especializacao;
+  if (!encontrouAlgo) {
     document.getElementById('result').innerHTML = `
       <div class="not-found">
         <div style="font-size:40px">🔍</div>
         <h3 style="margin-top:12px">Aluno não encontrado</h3>
-        <p>Nenhum resultado para "<strong>${query}</strong>" na planilha de alunos.</p>
+        <p>Nenhum resultado para "<strong>${query}</strong>" nas planilhas.</p>
         <p style="margin-top:8px">Tente com o e-mail completo ou confira a ortografia do nome.</p>
       </div>`;
     document.getElementById('result').style.display = 'block';
     return;
   }
 
-  // Se só um resultado, vai direto
-  if (alunos.length === 1) {
-    _alunosEncontrados = alunos;
+  // Monta aluno base — usa Closer Pro se encontrou, senão usa Líder Pro ou Especialização como base
+  let alunosBase = closerPro.length > 0 ? closerPro : [];
+
+  // Se não está na Closer Pro mas está em outra planilha, monta um aluno base sintético
+  if (!alunosBase.length) {
+    const base = liderPro || especializacao;
+    alunosBase = [{ nome: base.nome, email: base.email, telefone: base.telefone, dataInicio: base.dataInicio, expiracao: base.expiracao, status: base.status || '' }];
+  }
+
+  _alunosEncontrados = alunosBase;
+
+  // Se só um resultado, vai direto passando já os dados das outras planilhas
+  if (alunosBase.length === 1) {
+    // Enriquece com Líder Pro e Especialização já encontrados
+    _liderProCache = liderPro;
+    _especializacaoCache = especializacao;
     await selecionarAluno(0);
     return;
   }
 
   // Múltiplos — mostra lista
-  _alunosEncontrados = alunos;
-  mostrarLista(alunos);
+  mostrarLista(alunosBase);
 }
 
 // Enter para buscar
