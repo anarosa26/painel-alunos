@@ -663,7 +663,7 @@ async function buscarNaPlanilhaEspecializacao(query, sheetId) {
     const nome = row[7] || '';
     const email = row[8] || '';
     if (!nome && !email) continue;
-    if (normalize(email) === q || normalize(email).includes(q) || normalize(nome).includes(q)) {
+    if (matchQuery(query, nome, email)) {
       return {
         formacao: 'Especialização Closer HT',
         nome, email,
